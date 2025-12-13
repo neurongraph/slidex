@@ -158,3 +158,21 @@ clean-data:
 # Clean all data without confirmation prompt (dangerous!)
 clean-data-force:
     python scripts/clean_data.py --yes
+
+# Commit and push changes to remote repository
+push MESSAGE BRANCH="main":
+    git add .
+    git commit -m "{{MESSAGE}}"
+    git push origin {{BRANCH}}
+
+# Push with tags
+push-tags:
+    git push --tags
+
+# Create and push a new release tag
+release VERSION:
+    #!/usr/bin/env bash
+    echo "Creating release {{VERSION}}..."
+    git tag -a "v{{VERSION}}" -m "Release version {{VERSION}}"
+    git push origin "v{{VERSION}}"
+    echo "✓ Release v{{VERSION}} created and pushed"
