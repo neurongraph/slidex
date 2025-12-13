@@ -1,0 +1,160 @@
+# Slidex - justfile for common commands
+
+# Show available commands
+default:
+    @just --list
+
+# Complete development environment setup
+setup:
+    ./scripts/setup.sh
+
+# Sync dependencies using uv
+sync:
+    uv sync
+
+# Install dependencies (alias for sync)
+install:
+    uv sync
+
+# Pull required Ollama models
+pull-models:
+    @echo "Pulling Ollama models..."
+    ollama pull nomic-embed-text
+    ollama pull granite4:tiny-h
+    @echo "✓ Models ready"
+
+# Run the Flask development server
+run:
+    FLASK_APP=slidex.api.app:app FLASK_ENV=development flask run --host=0.0.0.0 --port=5000
+
+# Stop any running Flask instances (if backgrounded)
+stop:
+    pkill -f "flask run" || true
+
+# Run all tests
+test:
+    uv run pytest tests/ -v
+
+# Run tests with coverage
+test-coverage:
+    uv run pytest tests/ --cov=slidex --cov-report=html --cov-report=term
+
+# Initialize database schema
+init-db:
+    python scripts/init_db.py
+
+# Grant database permissions for external tools (like DBeaver)
+grant-permissions:
+    python scripts/grant_permissions.py
+
+# Ingest a PowerPoint file
+ingest-file FILE:
+    python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_file('{{FILE}}')"
+
+# Ingest a folder of PowerPoint files
+ingest-folder FOLDER RECURSIVE="True":
+    python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_folder('{{FOLDER}}', recursive={{RECURSIVE}})"
+
+# Check system requirements
+check:
+    #!/usr/bin/env bash
+    set +e
+    echo "Checking system requirements..."
+    
+    # Check Python
+    if command -v python3.12 > /dev/null 2>&1; then
+        echo "✓ Python 3.12 found: $(python3.12 --version)"
+    elif command -v python3.13 > /dev/null 2>&1; then
+        echo "✓ Python 3.13 found: $(python3.13 --version)"
+    elif command -v python3 > /dev/null 2>&1; then
+        py_version=$(python3 --version 2>&1)
+        if python3 -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
+            echo "✓ $py_version"
+        else
+            echo "❌ $py_version (3.12+ required)"
+            echo "   Install: brew install python@3.12 or use pyenv"
+        fi
+    else
+        echo "❌ Python not found"
+    fi
+    
+    
+    # Check PostgreSQL
+    if command -v psql > /dev/null 2>&1; then
+        echo "✓ PostgreSQL found"
+    else
+        echo "❌ PostgreSQL not found"
+    fi
+    
+    # Check Ollama
+    if command -v ollama > /dev/null 2>&1; then
+        echo "✓ Ollama found"
+    else
+        echo "❌ Ollama not found"
+    fi
+    
+    # Check if Ollama is running
+    if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then
+        echo "✓ Ollama running"
+    else
+        echo "⚠️  Ollama not running"
+    fi
+    
+    # Check virtual environment
+    if [ -f .venv/bin/python ]; then
+        echo "✓ Virtual environment exists"
+    else
+        echo "⚠️  Virtual environment not found"
+    fi
+
+# Clean generated files
+clean:
+    rm -rf storage/thumbnails/* storage/exports/*
+    rm -rf __pycache__ **/__pycache__ .pytest_cache
+    find . -type d -name "*.egg-info" -exec rm -rf {} + || true
+
+# Deep clean (including virtual environment and storage)
+clean-all: clean
+    rm -rf .venv
+    rm -rf storage/
+    rm -f .env
+    rm -f uv.lock
+
+# Format code
+format:
+    black slidex/ tests/
+
+# Lint code
+lint:
+    ruff check slidex/ tests/
+
+# View application logs
+logs:
+    tail -f storage/logs/slidex.log
+
+# View audit logs
+audit-logs:
+    @echo "Recent LLM audit logs:"
+    @sqlite3 storage/audit.db "SELECT timestamp, model_name, operation_type, duration_ms FROM llm_audit_log ORDER BY timestamp DESC LIMIT 20;" || echo "No audit logs found"
+
+# Show database stats
+db-stats:
+    @echo "Database statistics:"
+    @python -c "from slidex.core.database import db; decks = db.get_all_decks(); print(f'Total decks: {len(decks)}')" || echo "Error connecting to database"
+
+# Show FAISS index stats
+index-stats:
+    @echo "FAISS index statistics:"
+    @python -c "from slidex.core.vector_index import vector_index; print(vector_index.get_stats())" || echo "Error loading index"
+
+# Rebuild FAISS index from database
+rebuild-index:
+    python scripts/rebuild_index.py
+
+# Clean all data from database and FAISS index (keeps schema)
+clean-data:
+    python scripts/clean_data.py
+
+# Clean all data without confirmation prompt (dangerous!)
+clean-data-force:
+    python scripts/clean_data.py --yes

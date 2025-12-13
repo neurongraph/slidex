@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+
+{% block title %}Ingest - Slidex{% endblock %}
+
+{% block extra_css %}
+<style>
+    .info-box {
+        background: #e7f3ff;
+        border-left: 4px solid #2196F3;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border-radius: 4px;
+    }
+    .warning-box {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Ingest PowerPoint Files</h2>
+    
+    <div class="info-box">
+        <strong>💡 Note:</strong> The slidex CLI command requires activating the virtual environment first.
+    </div>
+    
+    <h3>Using the CLI</h3>
+    <p>In your terminal, activate the virtual environment and use the CLI:</p>
+    <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+# First, activate the virtual environment
+source .venv/bin/activate
+
+# Then ingest files
+slidex ingest file /path/to/presentation.pptx
+
+# Ingest a folder (recursive)
+slidex ingest folder /path/to/folder --recursive
+
+# Ingest a folder (non-recursive)
+slidex ingest folder /path/to/folder --no-recursive
+    </pre>
+    
+    <h3 style="margin-top: 2rem;">Using the API</h3>
+    <p>You can also use the REST API directly:</p>
+    <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+# Ingest file via API
+curl -X POST http://localhost:5000/api/ingest/file \\
+  -H "Content-Type: application/json" \\
+  -d '{"path": "/path/to/file.pptx"}'
+
+# Ingest folder via API
+curl -X POST http://localhost:5000/api/ingest/folder \\
+  -H "Content-Type: application/json" \\
+  -d '{"path": "/path/to/folder", "recursive": true}'
+    </pre>
+    
+    <h3 style="margin-top: 2rem;">Using Python Directly</h3>
+    <p>If you're in the project directory:</p>
+    <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+# Activate virtual environment
+source .venv/bin/activate
+
+# Use Python directly
+python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_file('/path/to/file.pptx')"
+    </pre>
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+# Example configuration file for Slidex
+# Copy this to .env or config/dev.yaml and customize
+
+# Database
+database_url: postgresql://localhost:5432/slidex
+
+# Ollama Configuration
+ollama_host: http://localhost
+ollama_port: 11434
+ollama_embedding_model: nomic-embed-text
+ollama_summary_model: granite4:tiny-h
+
+# Storage
+storage_root: storage
+faiss_index_path: storage/faiss_index.bin
+audit_db_path: storage/audit.db
+
+# Processing
+batch_size: 10
+thumbnail_width: 320
+top_k_results: 10
+
+# Logging
+log_level: DEBUG
+
+# Flask
+flask_host: 0.0.0.0
+flask_port: 5000
+flask_debug: true

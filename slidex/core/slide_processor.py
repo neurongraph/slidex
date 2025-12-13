@@ -1,0 +1,428 @@
+"""
+Slide processor for extracting text and generating thumbnails from PowerPoint slides.
+"""
+
+import io
+import subprocess
+import tempfile
+from copy import deepcopy
+from pathlib import Path
+from typing import Optional, Tuple
+from PIL import Image, ImageDraw, ImageFont
+from pptx import Presentation
+from pptx.util import Inches
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.dml.color import RGBColor
+
+from slidex.config import settings
+from slidex.logging_config import logger
+
+
+class SlideProcessor:
+    """Process PowerPoint slides to extract text and generate thumbnails."""
+    
+    @staticmethod
+    def extract_text_from_shape(shape) -> str:
+        """Extract text from a single shape."""
+        if hasattr(shape, "text"):
+            return shape.text
+        return ""
+    
+    @staticmethod
+    def extract_text_from_slide(slide) -> Tuple[Optional[str], str]:
+        """
+        Extract text from a slide.
+        
+        Returns:
+            Tuple of (title_header, plain_text)
+        """
+        title_header = None
+        text_parts = []
+        
+        # Try to get title from slide
+        if hasattr(slide, 'shapes'):
+            for shape in slide.shapes:
+                # Check if this is a title shape
+                if hasattr(shape, 'shape_type') and shape.name.lower().startswith('title'):
+                    if hasattr(shape, 'text') and shape.text.strip():
+                        title_header = shape.text.strip()
+                
+                # Extract all text
+                text = SlideProcessor.extract_text_from_shape(shape)
+                if text.strip():
+                    text_parts.append(text.strip())
+                
+                # Extract text from tables
+                # Note: shape.table raises ValueError if shape doesn't contain a table
+                    try:
+                        table = shape.table
+                        for row in table.rows:
+                            for cell in row.cells:
+                                if cell.text.strip():
+                                    text_parts.append(cell.text.strip())
+                    except (ValueError, AttributeError):
+                        # Shape doesn't contain a table, skip
+                        pass
+        
+        # Extract notes
+        if hasattr(slide, 'notes_slide') and slide.notes_slide:
+            if hasattr(slide.notes_slide, 'notes_text_frame'):
+                notes_text = slide.notes_slide.notes_text_frame.text
+                if notes_text.strip():
+                    text_parts.append(f"[Notes: {notes_text.strip()}]")
+        
+        plain_text = "\n".join(text_parts)
+        
+        # If no title found, try to use first non-empty text as title
+        if not title_header and text_parts:
+            title_header = text_parts[0][:100]  # Use first 100 chars
+        
+        return title_header, plain_text
+    
+    @staticmethod
+    def generate_thumbnail(
+        presentation: Presentation,
+        slide_index: int,
+        output_path: Path,
+        width: int = 320
+    ) -> None:
+        """
+        Generate a thumbnail image for a slide.
+        
+        Uses a hybrid approach:
+        1. Try LibreOffice for high-quality rendering
+        2. Fall back to enhanced Pillow rendering if LibreOffice unavailable
+        
+        Args:
+            presentation: The PowerPoint presentation
+            slide_index: Index of the slide
+            output_path: Path to save the thumbnail
+            width: Width of the thumbnail in pixels
+        """
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Try LibreOffice first for best quality
+        if SlideProcessor._try_libreoffice_thumbnail(presentation, slide_index, output_path, width):
+            return
+        
+        # Fall back to enhanced Pillow rendering
+        SlideProcessor._generate_pillow_thumbnail(presentation, slide_index, output_path, width)
+    
+    @staticmethod
+    def _find_libreoffice() -> Optional[str]:
+        """
+        Find LibreOffice executable in PATH or common macOS location.
+        
+        Returns:
+            Path to libreoffice/soffice executable, or None if not found
+        """
+        # Check if libreoffice is in PATH
+        result = subprocess.run(
+            ["which", "libreoffice"],
+            capture_output=True,
+            timeout=2
+        )
+        if result.returncode == 0:
+            return result.stdout.decode().strip()
+        
+        # Check macOS standard location
+        macos_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+        if Path(macos_path).exists():
+            return macos_path
+        
+        # Check for soffice in PATH (alternative name)
+        result = subprocess.run(
+            ["which", "soffice"],
+            capture_output=True,
+            timeout=2
+        )
+        if result.returncode == 0:
+            return result.stdout.decode().strip()
+        
+        return None
+    
+    @staticmethod
+    def _try_libreoffice_thumbnail(
+        presentation: Presentation,
+        slide_index: int,
+        output_path: Path,
+        width: int
+    ) -> bool:
+        """
+        Try to generate thumbnail using LibreOffice.
+        
+        Returns:
+            True if successful, False if LibreOffice not available
+        """
+        try:
+            # Find LibreOffice executable
+            libreoffice_path = SlideProcessor._find_libreoffice()
+            if not libreoffice_path:
+                logger.debug("LibreOffice not found, will use Pillow fallback")
+                return False
+            
+            # Create a temporary PPTX file with just the target slide
+            with tempfile.TemporaryDirectory() as temp_dir:
+                temp_dir_path = Path(temp_dir)
+                
+                # Create a new presentation with just the target slide
+                try:
+                    slide_to_export = presentation.slides[slide_index]
+                    
+                    # Create a minimal presentation with just this slide
+                    temp_pres = Presentation()
+                    
+                    # Copy slide dimensions
+                    try:
+                        src_prs = presentation
+                        temp_pres.slide_width = src_prs.slide_width
+                        temp_pres.slide_height = src_prs.slide_height
+                    except:
+                        pass
+                    
+                    # Add blank slide with same layout
+                    blank_slide_layout = temp_pres.slide_layouts[6]  # Blank layout
+                    new_slide = temp_pres.slides.add_slide(blank_slide_layout)
+                    
+                    # Copy shapes from original slide to new slide
+                    # This includes text, images, and all other shape types
+                    for shape in slide_to_export.shapes:
+                        try:
+                            el = shape.element
+                            newel = deepcopy(el)
+                            new_slide.shapes._spTree.insert_element_before(newel, 'p:extLst')
+                        except Exception as e:
+                            logger.debug(f"Could not copy shape {shape.name}: {e}")
+                            pass  # Skip shapes that can't be copied
+                    
+                    # Copy image relationships if they exist
+                    try:
+                        for rel in slide_to_export.part.rels.values():
+                            # Copy image and other media relationships
+                            if 'image' in rel.reltype or 'media' in rel.reltype:
+                                try:
+                                    # Get the related part
+                                    related_part = rel.target_part
+                                    # Create equivalent relationship in new slide
+                                    new_slide.part.relate_to(related_part, rel.reltype)
+                                except:
+                                    pass  # Skip if relationship can't be copied
+                    except:
+                        pass
+                    
+                    temp_pptx = temp_dir_path / "slide.pptx"
+                    temp_pres.save(str(temp_pptx))
+                    pptx_path = temp_pptx
+                    
+                except Exception as e:
+                    logger.debug(f"Failed to create single-slide presentation: {e}")
+                    return False
+                
+                # Use LibreOffice to export the slide as PNG
+                soffice_cmd = [
+                    libreoffice_path,
+                    "--headless",
+                    "--convert-to", "png",
+                    "--outdir", str(temp_dir_path),
+                    str(pptx_path)
+                ]
+                
+                result = subprocess.run(
+                    soffice_cmd,
+                    capture_output=True,
+                    timeout=30
+                )
+                
+                if result.returncode != 0:
+                    logger.debug(f"LibreOffice conversion failed: {result.stderr.decode()}")
+                    return False
+                
+                # Find the exported PNG
+                png_files = list(temp_dir_path.glob("*.png"))
+                
+                if not png_files:
+                    logger.debug("LibreOffice did not create any PNG files")
+                    return False
+                
+                source_png = png_files[0]
+                
+                # Resize to target width while maintaining aspect ratio
+                img = Image.open(source_png)
+                if img.width != width:
+                    height = int(width * img.height / img.width)
+                    img = img.resize((width, height), Image.Resampling.LANCZOS)
+                
+                img.save(output_path, 'PNG')
+                logger.debug(f"LibreOffice thumbnail generated: {output_path}")
+                return True
+        
+        except subprocess.TimeoutExpired:
+            logger.debug("LibreOffice conversion timed out")
+            return False
+        except Exception as e:
+            logger.debug(f"LibreOffice thumbnail generation failed: {e}")
+            return False
+    
+    @staticmethod
+    def _generate_pillow_thumbnail(
+        presentation: Presentation,
+        slide_index: int,
+        output_path: Path,
+        width: int = 320
+    ) -> None:
+        """
+        Generate thumbnail using enhanced Pillow rendering.
+        
+        Renders slide backgrounds, shapes, images, and text content.
+        """
+        try:
+            slide = presentation.slides[slide_index]
+            
+            # Calculate dimensions (assuming 16:9 aspect ratio)
+            height = int(width * 9 / 16)
+            
+            # Create image with slide background
+            img = Image.new('RGB', (width, height), color='white')
+            
+            # Try to get and render slide background
+            if slide.background.fill.type:
+                try:
+                    bg_color = slide.background.fill.fore_color.rgb
+                    bg_rgb = (bg_color[0], bg_color[1], bg_color[2])
+                    img = Image.new('RGB', (width, height), color=bg_rgb)
+                except:
+                    pass  # Use default white background
+            
+            draw = ImageDraw.Draw(img)
+            
+            # Load fonts
+            try:
+                title_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 20)
+                text_font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 12)
+            except:
+                title_font = ImageFont.load_default()
+                text_font = ImageFont.load_default()
+            
+            # Render shapes with basic styling
+            y_offset = 10
+            drawn_title = False
+            images_drawn = 0
+            
+            if hasattr(slide, 'shapes'):
+                for shape in slide.shapes:
+                    try:
+                        # Try to render images
+                        if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                            try:
+                                image = shape.image
+                                image_bytes = image.blob
+                                from PIL import Image as PILImage
+                                pil_img = PILImage.open(io.BytesIO(image_bytes))
+                                
+                                # Scale image to fit thumbnail
+                                max_img_width = width - 20
+                                max_img_height = height - y_offset - 10
+                                
+                                pil_img.thumbnail((max_img_width, max_img_height), PILImage.Resampling.LANCZOS)
+                                
+                                # Paste image onto thumbnail
+                                if pil_img.mode == 'RGBA':
+                                    img.paste(pil_img, (10, y_offset), pil_img)
+                                else:
+                                    img.paste(pil_img, (10, y_offset))
+                                
+                                y_offset += pil_img.height + 5
+                                images_drawn += 1
+                                continue
+                            except Exception as e:
+                                logger.debug(f"Could not render image: {e}")
+                        
+                        # Skip text-less shapes
+                        if not hasattr(shape, 'text') or not shape.text.strip():
+                            continue
+                        
+                        # Get text color if available
+                        text_color = (0, 0, 0)  # Default black
+                        if hasattr(shape, 'text_frame'):
+                            for paragraph in shape.text_frame.paragraphs:
+                                for run in paragraph.runs:
+                                    if run.font.color.type:
+                                        try:
+                                            rgb = run.font.color.rgb
+                                            text_color = (rgb[0], rgb[1], rgb[2])
+                                        except:
+                                            pass
+                        
+                        # Draw title differently
+                        if hasattr(shape, 'name') and shape.name.lower().startswith('title') and not drawn_title:
+                            title_wrapped = SlideProcessor._wrap_text(
+                                shape.text.strip(),
+                                width - 20,
+                                draw,
+                                title_font
+                            )
+                            draw.text((10, y_offset), title_wrapped, fill=text_color, font=title_font)
+                            y_offset += 50
+                            drawn_title = True
+                        elif y_offset < height - 30:
+                            # Draw regular text
+                            text_wrapped = SlideProcessor._wrap_text(
+                                shape.text.strip()[:200],  # Limit content
+                                width - 20,
+                                draw,
+                                text_font
+                            )
+                            draw.text((10, y_offset), text_wrapped, fill=(100, 100, 100), font=text_font)
+                            y_offset += 40
+                    
+                    except Exception as e:
+                        logger.debug(f"Error rendering shape: {e}")
+                        continue
+            
+            # Save thumbnail
+            img.save(output_path, 'PNG')
+            logger.debug(f"Pillow thumbnail generated: {output_path} (images: {images_drawn})")
+        
+        except Exception as e:
+            logger.error(f"Error generating Pillow thumbnail for slide {slide_index}: {e}")
+            # Create a placeholder image on error
+            img = Image.new('RGB', (width, int(width * 9 / 16)), color='lightgray')
+            draw = ImageDraw.Draw(img)
+            try:
+                draw.text((width//2 - 50, int(width * 9 / 16)//2 - 10), "No Preview", fill='black')
+            except:
+                pass
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(output_path, 'PNG')
+    
+    @staticmethod
+    def _wrap_text(text: str, max_width: int, draw, font) -> str:
+        """Simple text wrapping helper."""
+        words = text.split()
+        lines = []
+        current_line = []
+        
+        for word in words:
+            test_line = ' '.join(current_line + [word])
+            # For default font, estimate width
+            try:
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                width = bbox[2] - bbox[0]
+            except:
+                width = len(test_line) * 7  # Rough estimate
+            
+            if width <= max_width:
+                current_line.append(word)
+            else:
+                if current_line:
+                    lines.append(' '.join(current_line))
+                current_line = [word]
+        
+        if current_line:
+            lines.append(' '.join(current_line))
+        
+        return '\n'.join(lines[:10])  # Limit to 10 lines
+
+
+# Global slide processor instance
+slide_processor = SlideProcessor()
