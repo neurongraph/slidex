@@ -9,6 +9,8 @@ from pptx import Presentation
 from pptx.util import Inches
 import shutil
 from copy import deepcopy
+from pptx.oxml.ns import qn
+import io
 
 from slidex.config import settings
 from slidex.logging_config import logger
@@ -141,32 +143,82 @@ class SlideAssembler:
         
         # Get a blank slide layout from target
         blank_layout = target_presentation.slide_layouts[6]
-        
+
         # Add new slide with blank layout
         new_slide = target_presentation.slides.add_slide(blank_layout)
-        
+
         # Deep copy the entire slide XML tree from source to target
-        # This preserves all content, formatting, and relationships
+        # Collect newly inserted elements so we can remap relationship ids
+        new_elements = []
         for shape in source_slide.shapes:
-            # Clone the shape's XML element
-            el = shape.element
-            newel = deepcopy(el)
-            new_slide.shapes._spTree.insert_element_before(newel, 'p:extLst')
-        
-        # Copy image and media relationships
+            try:
+                el = shape.element
+                newel = deepcopy(el)
+                new_slide.shapes._spTree.insert_element_before(newel, 'p:extLst')
+                new_elements.append(newel)
+            except Exception as e:
+                logger.debug(f"Could not copy shape {getattr(shape, 'name', '')}: {e}")
+
+        # Copy image and media relationships by duplicating the target part when possible
+        # Map old rIds -> new rIds so we can remap r:embed attributes in the copied XML
+        old_to_new = {}
         try:
-            for rel in source_slide.part.rels.values():
-                # Copy image and other media relationships
-                if 'image' in rel.reltype or 'media' in rel.reltype:
-                    try:
-                        # Get the related part
+            for rId, rel in list(source_slide.part.rels.items()):
+                try:
+                    if 'image' in rel.reltype or 'media' in rel.reltype:
                         related_part = rel.target_part
-                        # Create equivalent relationship in new slide
-                        new_slide.part.relate_to(related_part, rel.reltype)
-                    except Exception as e:
-                        logger.debug(f"Could not copy relationship: {e}")
+
+                        new_part = None
+                        # Attempt to duplicate the binary part into the target package
+                        try:
+                            blob = getattr(related_part, 'blob', None)
+                            content_type = getattr(related_part, 'content_type', None)
+                            target_pkg = target_presentation.part.package
+
+                            if blob is not None and content_type:
+                                # Prefer public helper if available (some versions expose helpers)
+                                if hasattr(target_pkg, 'get_or_add_image_part'):
+                                    try:
+                                        new_part = target_pkg.get_or_add_image_part(blob)
+                                    except Exception:
+                                        new_part = None
+                                # Generic fallback: try to use package API if available
+                                if new_part is None and hasattr(target_pkg, 'get_or_add_part'):
+                                    try:
+                                        new_part = target_pkg.get_or_add_part(content_type, io.BytesIO(blob))
+                                    except Exception:
+                                        new_part = None
+                        except Exception as e:
+                            logger.debug(f"Could not duplicate related part blob: {e}")
+
+                        try:
+                            if new_part is not None:
+                                new_rel = new_slide.part.relate_to(new_part, rel.reltype)
+                            else:
+                                # Last-resort: relate to original part (works but is less portable)
+                                new_rel = new_slide.part.relate_to(related_part, rel.reltype)
+
+                            old_to_new[rId] = getattr(new_rel, 'rId', None)
+                        except Exception as e:
+                            logger.debug(f"Could not create relationship on new slide: {e}")
+                except Exception as e:
+                    logger.debug(f"Skipping relationship {rId}: {e}")
         except Exception as e:
             logger.debug(f"Error copying slide relationships: {e}")
+
+        # Remap r:embed references inside the newly inserted XML elements
+        if old_to_new:
+            try:
+                for newel in new_elements:
+                    for node in newel.iter():
+                        # look for r:embed attributes (e.g. in a:blip)
+                        embed_val = node.get(qn('r:embed'))
+                        if embed_val and embed_val in old_to_new:
+                            new_rid = old_to_new.get(embed_val)
+                            if new_rid:
+                                node.set(qn('r:embed'), new_rid)
+            except Exception as e:
+                logger.debug(f"Error remapping r:embed attributes: {e}")
     
 
 
