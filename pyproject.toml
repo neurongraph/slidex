@@ -3,7 +3,7 @@ name = "slidex"
 version = "0.1.0"
 description = "Slidex - Local PowerPoint slide management with semantic search"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.9"
 dependencies = [
     "python-pptx>=1.0.2",
     "pillow>=11.0.0",
@@ -17,7 +17,7 @@ dependencies = [
     "loguru>=0.7.3",
     "ollama>=0.4.5",
     "pyyaml>=6.0.2",
-    "numpy>=2.2.1",
+    "numpy>=1.21.0",
     "pytest>=8.3.4",
 ]
 

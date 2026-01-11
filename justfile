@@ -25,7 +25,7 @@ pull-models:
 
 # Run the Flask development server
 run:
-    FLASK_APP=slidex.api.app:app FLASK_ENV=development flask run --host=0.0.0.0 --port=5000
+    FLASK_APP=slidex.api.app:app FLASK_ENV=development uv run flask run --host=0.0.0.0 --port=5001
 
 # Stop any running Flask instances (if backgrounded)
 stop:
@@ -41,19 +41,19 @@ test-coverage:
 
 # Initialize database schema
 init-db:
-    python scripts/init_db.py
+    uv run python scripts/init_db.py
 
 # Grant database permissions for external tools (like DBeaver)
 grant-permissions:
-    python scripts/grant_permissions.py
+    uv run python scripts/grant_permissions.py
 
 # Ingest a PowerPoint file
 ingest-file FILE:
-    python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_file('{{FILE}}')"
+    uv run python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_file('{{FILE}}')"
 
 # Ingest a folder of PowerPoint files
 ingest-folder FOLDER RECURSIVE="True":
-    python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_folder('{{FOLDER}}', recursive={{RECURSIVE}})"
+    uv run python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_folder('{{FOLDER}}', recursive={{RECURSIVE}})"
 
 # Check system requirements
 check:
@@ -140,24 +140,24 @@ audit-logs:
 # Show database stats
 db-stats:
     @echo "Database statistics:"
-    @python -c "from slidex.core.database import db; decks = db.get_all_decks(); print(f'Total decks: {len(decks)}')" || echo "Error connecting to database"
+    @uv run python -c "from slidex.core.database import db; decks = db.get_all_decks(); print(f'Total decks: {len(decks)}')" || echo "Error connecting to database"
 
 # Show FAISS index stats
 index-stats:
     @echo "FAISS index statistics:"
-    @python -c "from slidex.core.vector_index import vector_index; print(vector_index.get_stats())" || echo "Error loading index"
+    @uv run python -c "from slidex.core.vector_index import vector_index; print(vector_index.get_stats())" || echo "Error loading index"
 
 # Rebuild FAISS index from database
 rebuild-index:
-    python scripts/rebuild_index.py
+    uv run python scripts/rebuild_index.py
 
 # Clean all data from database and FAISS index (keeps schema)
 clean-data:
-    python scripts/clean_data.py
+    uv run python scripts/clean_data.py
 
 # Clean all data without confirmation prompt (dangerous!)
 clean-data-force:
-    python scripts/clean_data.py --yes
+    uv run python scripts/clean_data.py --yes
 
 # Commit and push changes to remote repository
 push MESSAGE BRANCH="main":

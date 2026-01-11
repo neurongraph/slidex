@@ -7,9 +7,9 @@ echo "🚀 Setting up Slidex development environment..."
 
 # Check Python version
 echo "Checking Python version..."
-python_version=$(python3 --version 2>&1 | grep -oP '3\.\d+')
-if [[ ! $python_version =~ 3\.1[3-9] ]]; then
-    echo "❌ Error: Python 3.13+ is required"
+if ! python3 -c "import sys; exit(0 if sys.version_info >= (3, 9) else 1)" 2>/dev/null; then
+    python_version=$(python3 --version 2>&1)
+    echo "❌ Error: Python 3.9+ is required (found $python_version)"
     exit 1
 fi
 echo "✓ Python version OK: $(python3 --version)"

@@ -32,6 +32,11 @@ class Database:
     """Database operations for Slidex."""
     
     @staticmethod
+    def generate_slide_id() -> str:
+        """Generate a new UUID for a slide."""
+        return str(uuid.uuid4())
+    
+    @staticmethod
     def check_deck_exists(file_hash: str) -> Optional[str]:
         """
         Check if a deck with the given file hash already exists.
@@ -95,6 +100,7 @@ class Database:
         summary: str,
         thumbnail_path: str,
         original_slide_position: int,
+        slide_file_path: Optional[str] = None,
     ) -> str:
         """
         Insert a new slide into the database.
@@ -102,26 +108,53 @@ class Database:
         Returns:
             slide_id (UUID as string)
         """
+        slide_id = str(uuid.uuid4())
+        Database.insert_slide_with_id(
+            slide_id=slide_id,
+            deck_id=deck_id,
+            slide_index=slide_index,
+            title_header=title_header,
+            plain_text=plain_text,
+            summary=summary,
+            thumbnail_path=thumbnail_path,
+            original_slide_position=original_slide_position,
+            slide_file_path=slide_file_path,
+        )
+        return slide_id
+    
+    @staticmethod
+    def insert_slide_with_id(
+        slide_id: str,
+        deck_id: str,
+        slide_index: int,
+        title_header: Optional[str],
+        plain_text: str,
+        summary: str,
+        thumbnail_path: str,
+        original_slide_position: int,
+        slide_file_path: Optional[str] = None,
+    ) -> None:
+        """
+        Insert a new slide with a pre-generated slide_id.
+        Used when slide_id is needed before database insertion.
+        """
         with get_db_connection() as conn:
             cur = conn.cursor(cursor_factory=RealDictCursor)
-            
-            slide_id = str(uuid.uuid4())
             
             cur.execute(
                 """
                 INSERT INTO slides 
                 (slide_id, deck_id, slide_index, title_header, plain_text, 
-                 summary_10_20_words, thumbnail_path, original_slide_position)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                 summary_10_20_words, thumbnail_path, original_slide_position, slide_file_path)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING slide_id
                 """,
                 (slide_id, deck_id, slide_index, title_header, plain_text,
-                 summary, thumbnail_path, original_slide_position)
+                 summary, thumbnail_path, original_slide_position, slide_file_path)
             )
             
             result = cur.fetchone()
             logger.debug(f"Slide inserted: {slide_id} (deck: {deck_id}, index: {slide_index})")
-            return str(result['slide_id'])
     
     @staticmethod
     def insert_faiss_mapping(slide_id: str, vector_id: int) -> None:

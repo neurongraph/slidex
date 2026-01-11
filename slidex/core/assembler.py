@@ -55,19 +55,8 @@ class SlideAssembler:
         if not slides_data:
             raise ValueError("No valid slides found")
         
-        # Group slides by deck to efficiently load presentations
-        slides_by_deck = {}
-        for slide_data in slides_data:
-            deck_path = slide_data['deck_path']
-            if deck_path not in slides_by_deck:
-                slides_by_deck[deck_path] = []
-            slides_by_deck[deck_path].append(slide_data)
-        
         # Create new presentation
         new_prs = Presentation()
-        
-        # For proper sizing, we can set the slide dimensions from the first source
-        # or use default dimensions
         
         # Process slides in the requested order
         if preserve_order:
@@ -79,35 +68,34 @@ class SlideAssembler:
                 key=lambda x: (x['deck_path'], x['slide_index'])
             )
         
-        # Track which decks we've already loaded
-        loaded_decks = {}
-        
         for slide_data in ordered_slides:
-            deck_path = slide_data['deck_path']
-            slide_index = slide_data['slide_index']
+            slide_file_path = slide_data.get('slide_file_path')
             
             try:
-                # Load source presentation if not already loaded
-                if deck_path not in loaded_decks:
-                    source_prs = Presentation(deck_path)
-                    loaded_decks[deck_path] = source_prs
-                    logger.debug(f"Loaded source presentation: {deck_path}")
+                # If individual slide file exists, use it (new method)
+                if slide_file_path and Path(slide_file_path).exists():
+                    # Load the individual slide file (contains just one slide)
+                    source_prs = Presentation(slide_file_path)
+                    source_slide = source_prs.slides[0]  # Always first slide
+                    logger.debug(f"Loaded individual slide file: {slide_file_path}")
                 else:
-                    source_prs = loaded_decks[deck_path]
-                
-                # Get the source slide
-                source_slide = source_prs.slides[slide_index]
+                    # Fallback to old method: load from original deck
+                    deck_path = slide_data['deck_path']
+                    slide_index = slide_data['slide_index']
+                    source_prs = Presentation(deck_path)
+                    source_slide = source_prs.slides[slide_index]
+                    logger.debug(f"Loaded slide from original deck: {deck_path} (index {slide_index})")
                 
                 # Copy slide to new presentation
                 SlideAssembler._copy_slide(source_slide, new_prs)
                 
                 logger.debug(
-                    f"Copied slide: {slide_data['title_header'] or f'Slide {slide_index}'}"
+                    f"Copied slide: {slide_data.get('title_header') or 'Untitled'}"
                 )
                 
             except Exception as e:
                 logger.error(
-                    f"Error copying slide {slide_index} from {deck_path}: {e}"
+                    f"Error copying slide {slide_data.get('slide_id')}: {e}"
                 )
                 # Continue with other slides
                 continue

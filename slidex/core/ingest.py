@@ -101,9 +101,24 @@ class IngestEngine:
             # Extract text
             title_header, plain_text = slide_processor.extract_text_from_slide(slide)
             
+            # Extract visual content information
+            visual_context = slide_processor.extract_visual_content_info(slide)
+            
             if not plain_text.strip():
                 logger.warning(f"Slide {slide_idx} has no text, using placeholder")
                 plain_text = f"[Slide {slide_idx + 1}]"
+            
+            # Generate slide_id early so we can use it for file naming
+            slide_id = db.generate_slide_id()
+            
+            # Save individual slide as standalone .pptx file
+            slide_filename = f"{slide_id}.pptx"
+            slide_file_path = settings.slides_dir / slide_filename
+            slide_processor.save_slide_as_file(
+                presentation,
+                slide_idx,
+                slide_file_path
+            )
             
             # Generate thumbnail
             thumbnail_filename = f"{deck_id}_{slide_idx}.png"
@@ -117,11 +132,20 @@ class IngestEngine:
             
             # Generate summary
             try:
-                summary = ollama_client.generate_summary(
-                    plain_text,
-                    max_words=20,
-                    session_id=session_id
-                )
+                # For very minimal text (< 15 chars), create simple summary without LLM
+                if len(plain_text.strip()) < 15:
+                    if visual_context:
+                        summary = f"{plain_text.strip()} - {visual_context}"
+                    else:
+                        summary = f"Slide: {plain_text.strip()}"
+                    logger.debug(f"Using simple summary for minimal text slide")
+                else:
+                    summary = ollama_client.generate_summary(
+                        plain_text,
+                        max_words=20,
+                        session_id=session_id,
+                        visual_context=visual_context if visual_context else None
+                    )
             except Exception as e:
                 logger.error(f"Error generating summary for slide {slide_idx}: {e}")
                 summary = plain_text[:100]  # Fallback to truncated text
@@ -143,8 +167,7 @@ class IngestEngine:
             # Add to FAISS index
             vector_id = vector_index.add_vector(embedding)
             
-            # Insert slide record
-            # Store thumbnail path relative to project root, or absolute if outside
+            # Store paths relative to project root, or absolute if outside
             try:
                 # Try to make it relative to current working directory
                 rel_thumbnail_path = thumbnail_path.resolve().relative_to(Path.cwd().resolve())
@@ -153,7 +176,15 @@ class IngestEngine:
                 # If not in subpath, use absolute path
                 thumbnail_path_str = str(thumbnail_path.resolve())
             
-            slide_id = db.insert_slide(
+            try:
+                rel_slide_file_path = slide_file_path.resolve().relative_to(Path.cwd().resolve())
+                slide_file_path_str = str(rel_slide_file_path)
+            except ValueError:
+                slide_file_path_str = str(slide_file_path.resolve())
+            
+            # Insert slide record with pre-generated slide_id
+            db.insert_slide_with_id(
+                slide_id=slide_id,
                 deck_id=deck_id,
                 slide_index=slide_idx,
                 title_header=title_header,
@@ -161,6 +192,7 @@ class IngestEngine:
                 summary=summary,
                 thumbnail_path=thumbnail_path_str,
                 original_slide_position=slide_idx,
+                slide_file_path=slide_file_path_str,
             )
             
             # Insert FAISS mapping

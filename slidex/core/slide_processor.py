@@ -29,6 +29,61 @@ class SlideProcessor:
         return ""
     
     @staticmethod
+    def extract_visual_content_info(slide) -> str:
+        """
+        Extract information about visual content in a slide.
+        
+        Returns:
+            Description of visual elements (images, charts, tables, shapes)
+        """
+        visual_elements = []
+        
+        if hasattr(slide, 'shapes'):
+            image_count = 0
+            chart_count = 0
+            table_count = 0
+            shape_count = 0
+            
+            for shape in slide.shapes:
+                try:
+                    # Count pictures
+                    if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                        image_count += 1
+                    # Count charts
+                    elif shape.shape_type == MSO_SHAPE_TYPE.CHART:
+                        chart_count += 1
+                    # Count tables
+                    elif hasattr(shape, 'table'):
+                        try:
+                            _ = shape.table
+                            table_count += 1
+                        except (ValueError, AttributeError):
+                            pass
+                    # Count other shapes (rectangles, circles, etc.)
+                    elif shape.shape_type in [
+                        MSO_SHAPE_TYPE.AUTO_SHAPE,
+                        MSO_SHAPE_TYPE.FREEFORM,
+                        MSO_SHAPE_TYPE.GROUP
+                    ]:
+                        shape_count += 1
+                except AttributeError:
+                    continue
+            
+            # Build description
+            if image_count > 0:
+                visual_elements.append(f"{image_count} image(s)")
+            if chart_count > 0:
+                visual_elements.append(f"{chart_count} chart(s)")
+            if table_count > 0:
+                visual_elements.append(f"{table_count} table(s)")
+            if shape_count > 0:
+                visual_elements.append(f"{shape_count} shape(s)")
+        
+        if visual_elements:
+            return "Contains: " + ", ".join(visual_elements)
+        return ""
+    
+    @staticmethod
     def extract_text_from_slide(slide) -> Tuple[Optional[str], str]:
         """
         Extract text from a slide.
@@ -422,6 +477,72 @@ class SlideProcessor:
             lines.append(' '.join(current_line))
         
         return '\n'.join(lines[:10])  # Limit to 10 lines
+    
+    @staticmethod
+    def save_slide_as_file(
+        presentation: Presentation,
+        slide_index: int,
+        output_path: Path
+    ) -> None:
+        """
+        Save a single slide as a standalone .pptx file.
+        
+        Creates a new presentation containing only the specified slide,
+        preserving all formatting, shapes, images, and content.
+        
+        Args:
+            presentation: The source PowerPoint presentation
+            slide_index: Index of the slide to extract
+            output_path: Path where the single-slide .pptx should be saved
+        """
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Get the source slide
+            source_slide = presentation.slides[slide_index]
+            
+            # Create a new presentation with just this slide
+            new_prs = Presentation()
+            
+            # Copy slide dimensions from source
+            try:
+                new_prs.slide_width = presentation.slide_width
+                new_prs.slide_height = presentation.slide_height
+            except Exception as e:
+                logger.debug(f"Could not copy slide dimensions: {e}")
+            
+            # Add blank slide with blank layout
+            blank_layout = new_prs.slide_layouts[6]  # Blank layout
+            new_slide = new_prs.slides.add_slide(blank_layout)
+            
+            # Copy all shapes from source slide using deep XML cloning
+            for shape in source_slide.shapes:
+                try:
+                    el = shape.element
+                    newel = deepcopy(el)
+                    new_slide.shapes._spTree.insert_element_before(newel, 'p:extLst')
+                except Exception as e:
+                    logger.debug(f"Could not copy shape {getattr(shape, 'name', '')}: {e}")
+            
+            # Copy image and media relationships
+            try:
+                for rel in source_slide.part.rels.values():
+                    if 'image' in rel.reltype or 'media' in rel.reltype:
+                        try:
+                            related_part = rel.target_part
+                            new_slide.part.relate_to(related_part, rel.reltype)
+                        except Exception as e:
+                            logger.debug(f"Could not copy relationship: {e}")
+            except Exception as e:
+                logger.debug(f"Error copying relationships: {e}")
+            
+            # Save the single-slide presentation
+            new_prs.save(str(output_path))
+            logger.debug(f"Saved individual slide file: {output_path}")
+            
+        except Exception as e:
+            logger.error(f"Error saving slide as file: {e}")
+            raise
 
 
 # Global slide processor instance

@@ -7,12 +7,8 @@ echo "🚀 Setting up Slidex development environment..."
 
 # Check Python version
 echo "Checking Python version..."
-# Try python3.12 first, then python3.13, fall back to python3
-if command -v python3.12 &> /dev/null; then
-    PYTHON_CMD=python3.12
-elif command -v python3.13 &> /dev/null; then
-    PYTHON_CMD=python3.13
-elif command -v python3 &> /dev/null; then
+# Try python3 command
+if command -v python3 &> /dev/null; then
     PYTHON_CMD=python3
 else
     echo "❌ Error: Python 3 not found"
@@ -20,9 +16,9 @@ else
 fi
 
 python_version=$($PYTHON_CMD --version 2>&1 | awk '{print $2}')
-if ! $PYTHON_CMD -c "import sys; exit(0 if sys.version_info >= (3, 12) else 1)" 2>/dev/null; then
-    echo "❌ Error: Python 3.12+ is required (found $python_version)"
-    echo "   Install with: brew install python@3.12 or use pyenv"
+if ! $PYTHON_CMD -c "import sys; exit(0 if sys.version_info >= (3, 9) else 1)" 2>/dev/null; then
+    echo "❌ Error: Python 3.9+ is required (found $python_version)"
+    echo "   Install with: brew install python@3.9 or use pyenv"
     exit 1
 fi
 echo "✓ Python version OK: $python_version ($PYTHON_CMD)"
@@ -61,7 +57,7 @@ echo "✓ uv found"
 # Create virtual environment if needed
 if [ ! -d ".venv" ]; then
     echo "Creating virtual environment..."
-    uv venv --python 3.12
+    uv venv
     echo "✓ Virtual environment created"
 else
     echo "✓ Virtual environment exists"

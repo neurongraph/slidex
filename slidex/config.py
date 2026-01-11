@@ -77,6 +77,11 @@ class Settings(BaseSettings):
         return self.storage_root / "thumbnails"
     
     @property
+    def slides_dir(self) -> Path:
+        """Individual slides storage directory."""
+        return self.storage_root / "slides"
+    
+    @property
     def exports_dir(self) -> Path:
         """Exports storage directory."""
         return self.storage_root / "exports"
@@ -85,6 +90,7 @@ class Settings(BaseSettings):
         """Ensure all required directories exist."""
         self.storage_root.mkdir(parents=True, exist_ok=True)
         self.thumbnails_dir.mkdir(parents=True, exist_ok=True)
+        self.slides_dir.mkdir(parents=True, exist_ok=True)
         self.exports_dir.mkdir(parents=True, exist_ok=True)
         self.faiss_index_path.parent.mkdir(parents=True, exist_ok=True)
         self.audit_db_path.parent.mkdir(parents=True, exist_ok=True)

@@ -33,6 +33,7 @@ def test_settings_paths():
     
     # Test directory properties
     assert settings.thumbnails_dir == settings.storage_root / "thumbnails"
+    assert settings.slides_dir == settings.storage_root / "slides"
     assert settings.exports_dir == settings.storage_root / "exports"
     
     # Test that paths are Path objects
@@ -50,6 +51,7 @@ def test_settings_ensure_directories(tmp_path):
     # Check that directories were created
     assert settings.storage_root.exists()
     assert settings.thumbnails_dir.exists()
+    assert settings.slides_dir.exists()
     assert settings.exports_dir.exists()
     assert settings.faiss_index_path.parent.exists()
     assert settings.audit_db_path.parent.exists()

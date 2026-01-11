@@ -95,7 +95,8 @@ class OllamaClient:
         self,
         text: str,
         max_words: int = 20,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        visual_context: Optional[str] = None
     ) -> str:
         """
         Generate a short summary of the text using Ollama LLM.
@@ -104,6 +105,7 @@ class OllamaClient:
             text: Input text to summarize
             max_words: Maximum number of words in summary (default 20)
             session_id: Optional session identifier for audit logging
+            visual_context: Optional description of visual content (images, charts, etc.)
             
         Returns:
             Summary text string
@@ -113,10 +115,28 @@ class OllamaClient:
         summary = None
         
         try:
-            prompt = (
-                f"Summarize the following slide content in exactly 10-20 words. "
-                f"Be concise and capture the main point:\n\n{text[:1000]}"
-            )
+            # Build prompt based on available content
+            if len(text.strip()) < 10 and visual_context:
+                # Minimal text but has visual content
+                prompt = (
+                    f"Create a factual 10-20 word description. Do not make up content. "
+                    f"Only describe what's explicitly shown:\n\n"
+                    f"Title/Text: {text[:1000]}\n"
+                    f"Visual Content: {visual_context}\n\n"
+                    f"Description:"
+                )
+            elif len(text.strip()) < 10:
+                # Minimal text, no visual context
+                prompt = (
+                    f"Create a factual 10-20 word description of this slide. "
+                    f"Do not make up or infer content. Only use what's given:\n\n{text[:1000]}"
+                )
+            else:
+                # Normal text content
+                prompt = (
+                    f"Summarize the following slide content in exactly 10-20 words. "
+                    f"Be concise, factual, and capture only what's explicitly stated:\n\n{text[:1000]}"
+                )
             
             logger.debug(f"Generating summary for text (length: {len(text)})")
             
