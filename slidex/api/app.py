@@ -13,6 +13,7 @@ from slidex.core.ingest import ingest_engine
 from slidex.core.search import search_engine
 from slidex.core.assembler import slide_assembler
 from slidex.core.database import db
+from slidex.core.graph_visualizer import graph_visualizer
 
 
 app = Flask(
@@ -44,6 +45,12 @@ def decks_page():
     """View all decks."""
     decks = db.get_all_decks()
     return render_template('decks.html', decks=decks)
+
+
+@app.route('/graph')
+def graph_page():
+    """Knowledge graph visualization page."""
+    return render_template('graph.html')
 
 
 # ============= API Routes =============
@@ -128,7 +135,11 @@ def api_ingest_folder():
 def api_search():
     """
     Search for slides.
-    Body: { "query": "search text", "top_k": 10 }
+    Body: { 
+        "query": "search text", 
+        "top_k": 10,
+        "mode": "hybrid"  # naive, local, global, or hybrid (LightRAG modes)
+    }
     """
     try:
         data = request.get_json()
@@ -138,15 +149,24 @@ def api_search():
         
         query = data['query']
         top_k = data.get('top_k', settings.top_k_results)
+        mode = data.get('mode', 'hybrid')
         
-        logger.info(f"API: Searching for '{query}' (top_k={top_k})")
+        # Validate mode
+        valid_modes = ['naive', 'local', 'global', 'hybrid']
+        if mode not in valid_modes:
+            return jsonify({
+                'error': f'Invalid mode. Must be one of: {valid_modes}'
+            }), 400
         
-        results = search_engine.search(query, top_k=top_k)
+        logger.info(f"API: Searching for '{query}' (top_k={top_k}, mode={mode})")
+        
+        results = search_engine.search(query, top_k=top_k, mode=mode)
         
         return jsonify({
             'success': True,
             'results': results,
-            'count': len(results)
+            'count': len(results),
+            'mode': mode
         })
     
     except Exception as e:
@@ -273,6 +293,46 @@ def api_get_decks():
         })
     except Exception as e:
         logger.error(f"API error getting decks: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/graph/data', methods=['GET'])
+def api_graph_data():
+    """Get knowledge graph data for visualization."""
+    try:
+        if not settings.lightrag_enabled:
+            return jsonify({
+                'error': 'LightRAG is not enabled'
+            }), 400
+        
+        graph_data = graph_visualizer.export_graph_data()
+        return jsonify({
+            'success': True,
+            'graph': graph_data
+        })
+    
+    except Exception as e:
+        logger.error(f"API error getting graph data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/graph/stats', methods=['GET'])
+def api_graph_stats():
+    """Get knowledge graph statistics."""
+    try:
+        if not settings.lightrag_enabled:
+            return jsonify({
+                'error': 'LightRAG is not enabled'
+            }), 400
+        
+        stats = graph_visualizer.get_graph_stats()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    
+    except Exception as e:
+        logger.error(f"API error getting graph stats: {e}")
         return jsonify({'error': str(e)}), 500
 
 

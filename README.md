@@ -1,12 +1,14 @@
 # Slidex
 
-Slidex is a single-user Python application for managing PowerPoint slides with semantic search capabilities. It ingests PowerPoint presentations, generates embeddings using local Ollama models, stores them in a FAISS vector index, and enables semantic search and assembly of slides into new presentations.
+Slidex is a single-user Python application for managing PowerPoint slides with semantic search capabilities. It uses LightRAG, a graph-based retrieval system, to provide advanced semantic search with entity extraction and relationship mapping across slides.
 
 ## Features
 
+- **LightRAG Integration**: Graph-based RAG with entity extraction and relationship discovery
+- **Multiple Query Modes**: naive, local, global, and hybrid search strategies
 - **Ingest PowerPoint files**: Single files or entire folders (recursive)
 - **Deduplication**: Automatic detection and skipping of duplicate files
-- **Semantic search**: Find slides using natural language queries
+- **Advanced semantic search**: Find slides using natural language with context awareness
 - **Slide preview**: Thumbnails and summaries for each slide
 - **Slide assembly**: Create new presentations from search results
 - **Local models**: Uses Ollama for embeddings and summarization (no cloud APIs)
@@ -28,6 +30,20 @@ Download the required models before using Slidex:
 ```bash
 ollama pull nomic-embed-text
 ollama pull granite4:tiny-h
+```
+
+**Important**: LightRAG requires Ollama models with a context size of at least 32k tokens. You may need to configure your Ollama model:
+
+```bash
+# Create a Modelfile with increased context
+ollama show --modelfile granite4:tiny-h > Modelfile
+echo "PARAMETER num_ctx 32768" >> Modelfile
+ollama create granite4:tiny-h-32k -f Modelfile
+```
+
+Then update your `.env` file to use the new model:
+```
+OLLAMA_SUMMARY_MODEL=granite4:tiny-h-32k
 ```
 
 ## Installation
@@ -90,7 +106,10 @@ Key settings:
 - `OLLAMA_EMBEDDING_MODEL`: Embedding model (default: `nomic-embed-text`)
 - `OLLAMA_SUMMARY_MODEL`: Summary model (default: `granite4:tiny-h`)
 - `STORAGE_ROOT`: Base directory for thumbnails and exports
-- `FAISS_INDEX_PATH`: Path to FAISS index file
+- `LIGHTRAG_WORKING_DIR`: LightRAG storage directory (default: `storage/lightrag`)
+- `LIGHTRAG_ENABLED`: Enable LightRAG (default: `True`)
+- `LIGHTRAG_LLM_CONTEXT_SIZE`: Context size for LightRAG LLM (default: `32768`)
+- `FAISS_INDEX_PATH`: Path to FAISS index file (legacy, used when LightRAG is disabled)
 - `TOP_K_RESULTS`: Default number of search results (default: 10)
 
 ## Usage
@@ -128,15 +147,24 @@ slidex ingest file /path/to/file.pptx --uploader "John Doe"
 
 #### Search
 
+LightRAG provides four query modes:
+- **naive**: Simple semantic search without graph traversal
+- **local**: Focuses on contextually related information  
+- **global**: Utilizes global knowledge across all slides
+- **hybrid**: Combines local and global retrieval (recommended)
+
 ```bash
-# Basic search
+# Basic search with hybrid mode (default)
 slidex search "machine learning algorithms"
 
+# Search with specific mode
+slidex search "data visualization" --mode global
+
 # Search with custom result count
-slidex search "data visualization" --top-k 20
+slidex search "cloud architecture" --top-k 20 --mode local
 
 # JSON output (for scripting)
-slidex search "cloud architecture" --json
+slidex search "neural networks" --json --mode hybrid
 ```
 
 #### Assemble Presentations
@@ -186,9 +214,15 @@ curl -X POST http://localhost:5000/api/ingest/folder \
 
 #### Search
 ```bash
+# Basic search with default hybrid mode
 curl -X POST http://localhost:5000/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "data science", "top_k": 10}'
+
+# Search with specific LightRAG mode
+curl -X POST http://localhost:5000/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "machine learning", "top_k": 10, "mode": "global"}'
 ```
 
 #### Assemble
@@ -222,14 +256,16 @@ slidex/
 │   │   ├── audit_logger.py   # SQLite audit logging
 │   │   ├── database.py       # PostgreSQL operations
 │   │   ├── ollama_client.py  # Ollama integration
+│   │   ├── lightrag_client.py # LightRAG wrapper
 │   │   ├── slide_processor.py # Text extraction & thumbnails
-│   │   ├── vector_index.py   # FAISS index management
+│   │   ├── vector_index.py   # FAISS index (legacy)
 │   │   ├── ingest.py         # Ingestion engine
 │   │   ├── search.py         # Search engine
 │   │   └── assembler.py      # Presentation assembly
 │   └── templates/            # Jinja2 templates
 ├── migrations/               # SQL schema migrations
 ├── storage/                  # Local storage
+│   ├── lightrag/            # LightRAG graph storage
 │   ├── thumbnails/          # Slide thumbnails
 │   ├── exports/             # Assembled presentations
 │   ├── logs/                # Application logs
@@ -258,9 +294,10 @@ just init-db      # Initialize database
 just clean        # Clean generated files
 just clean-all    # Deep clean (remove venv, storage, .env)
 just logs         # View application logs
-just audit-logs   # View LLM audit logs
-just db-stats     # Show database statistics
-just index-stats  # Show FAISS index statistics
+just audit-logs     # View LLM audit logs
+just db-stats       # Show database statistics
+just lightrag-stats # Show LightRAG index statistics
+just clean-data     # Clean all data (database, FAISS, LightRAG)
 ```
 
 ### Running Tests
@@ -273,15 +310,50 @@ pytest tests/ -v
 
 ## How It Works
 
-1. **Ingestion**: PowerPoint files are parsed using `python-pptx`. Text is extracted from slides, thumbnails are generated with Pillow, and summaries are created using Ollama.
+### LightRAG Architecture
 
-2. **Embeddings**: Text content is embedded using Ollama's `nomic-embed-text` model. Vectors are stored in a local FAISS index.
+Slidex now uses **LightRAG**, a graph-based RAG system that provides more sophisticated retrieval than traditional vector search:
 
-3. **Search**: Query text is embedded and compared against the FAISS index using cosine similarity. Results are ranked by similarity score.
+1. **Ingestion**:
+   - PowerPoint files are parsed using `python-pptx`
+   - Text is extracted from slides and thumbnails are generated
+   - Summaries are created using Ollama's LLM
+   - Slide content is inserted into LightRAG with metadata (deck name, slide index, etc.)
+   - LightRAG automatically extracts entities and relationships between slides
+   - A knowledge graph is built to capture semantic connections
+
+2. **Entity & Relationship Extraction**:
+   - LightRAG uses the configured LLM to identify key entities (concepts, topics, names)
+   - Relationships between entities are discovered across slides
+   - This enables contextual retrieval beyond simple keyword matching
+
+3. **Search with Multiple Modes**:
+   - **Naive**: Simple semantic search without graph traversal
+   - **Local**: Retrieves contextually related information from nearby graph nodes
+   - **Global**: Utilizes global knowledge across the entire knowledge graph
+   - **Hybrid**: Combines local and global strategies for best results (recommended)
+   - Query results include synthesized answers with references to relevant slides
 
 4. **Assembly**: Selected slides are copied from original presentations into a new PowerPoint file, preserving formatting where possible.
 
-5. **Audit**: All LLM interactions (embeddings and summaries) are logged to a SQLite database for full auditability.
+5. **Audit**: All LLM interactions (embeddings, entity extraction, queries) are logged to a SQLite database for full auditability.
+
+### Starting Fresh with LightRAG
+
+If you're upgrading from a previous version or want to start with a clean slate:
+
+```bash
+# Clean all existing data (database, FAISS, LightRAG)
+just clean-data
+
+# Re-initialize database
+just init-db
+
+# Re-ingest your PowerPoint files
+just ingest-folder /path/to/your/slides
+```
+
+All slides will be indexed into LightRAG's knowledge graph automatically during ingestion.
 
 ## Limitations
 
@@ -316,6 +388,11 @@ brew install --cask libreoffice
 ### Import errors
 - Ensure virtual environment is activated
 - Reinstall dependencies: `just install`
+
+### LightRAG errors
+- Ensure your Ollama model has 32k+ context size (see Installation section)
+- Check LightRAG storage: `just lightrag-stats`
+- Clean and re-index if needed: `just clean-data` then re-ingest slides
 
 ## License
 

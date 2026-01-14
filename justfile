@@ -147,13 +147,21 @@ index-stats:
     @echo "FAISS index statistics:"
     @uv run python -c "from slidex.core.vector_index import vector_index; print(vector_index.get_stats())" || echo "Error loading index"
 
+# Show LightRAG index stats
+lightrag-stats:
+    @echo "LightRAG index statistics:"
+    @uv run python -c "from slidex.core.lightrag_client import lightrag_client; import json; print(json.dumps(lightrag_client.get_stats(), indent=2))" || echo "Error loading LightRAG"
+
 # Rebuild FAISS index from database
 rebuild-index:
     uv run python scripts/rebuild_index.py
 
-# Clean all data from database and FAISS index (keeps schema)
+# Clean all data from database, FAISS index, and LightRAG (keeps schema)
 clean-data:
     uv run python scripts/clean_data.py
+    @echo "Cleaning LightRAG storage..."
+    rm -rf storage/lightrag/*
+    @echo "✓ LightRAG storage cleaned"
 
 # Clean all data without confirmation prompt (dangerous!)
 clean-data-force:
