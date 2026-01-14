@@ -42,10 +42,11 @@ class LightRAGClient:
             """Embedding function with audit logging."""
             start_time = time.time()
             try:
-                # Call ollama_embed directly
+                # Call ollama_embed with host configuration
                 result = await ollama_embed(
                     texts,
-                    embed_model=settings.ollama_embedding_model
+                    embed_model=settings.ollama_embedding_model,
+                    host=settings.ollama_base_url
                 )
                 
                 duration_ms = (time.time() - start_time) * 1000
@@ -86,6 +87,10 @@ class LightRAGClient:
             """LLM function with audit logging."""
             start_time = time.time()
             try:
+                # Add host configuration to kwargs if not present
+                if 'host' not in kwargs:
+                    kwargs['host'] = settings.ollama_base_url
+                
                 # Call ollama_model_complete
                 # Note: model_name comes from kwargs["hashing_kv"].global_config["llm_model_name"]
                 # which is set during LightRAG initialization
