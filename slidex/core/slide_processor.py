@@ -52,13 +52,9 @@ class SlideProcessor:
                     # Count charts
                     elif shape.shape_type == MSO_SHAPE_TYPE.CHART:
                         chart_count += 1
-                    # Count tables
-                    elif hasattr(shape, 'table'):
-                        try:
-                            _ = shape.table
-                            table_count += 1
-                        except (ValueError, AttributeError):
-                            pass
+                    # Count tables - check shape_type first to avoid hasattr triggering ValueError
+                    elif shape.shape_type == MSO_SHAPE_TYPE.TABLE:
+                        table_count += 1
                     # Count other shapes (rectangles, circles, etc.)
                     elif shape.shape_type in [
                         MSO_SHAPE_TYPE.AUTO_SHAPE,
@@ -515,26 +511,54 @@ class SlideProcessor:
             blank_layout = new_prs.slide_layouts[6]  # Blank layout
             new_slide = new_prs.slides.add_slide(blank_layout)
             
+            # Build a mapping of old rIds to new rIds for relationship updates
+            rel_id_map = {}
+            
+            # Copy image and media parts first, before copying shapes
+            try:
+                for rel_id, rel in source_slide.part.rels.items():
+                    if 'image' in rel.reltype or 'media' in rel.reltype:
+                        try:
+                            # Get the image/media part and its binary content
+                            related_part = rel.target_part
+                            
+                            # Create a new image part in the destination package
+                            # Wrap blob in BytesIO since get_or_add_image_part expects a file-like object
+                            from io import BytesIO
+                            image_stream = BytesIO(related_part.blob)
+                            image_part = new_slide.part.package.get_or_add_image_part(image_stream)
+                            
+                            # Create relationship in new slide to the image
+                            # relate_to returns the rId string directly
+                            new_rId = new_slide.part.relate_to(image_part, rel.reltype)
+                            
+                            # Map old rId to new rId for updating shape references
+                            rel_id_map[rel_id] = new_rId
+                            
+                        except Exception as e:
+                            logger.debug(f"Could not copy image/media part: {e}")
+            except Exception as e:
+                logger.debug(f"Error copying image/media relationships: {e}")
+            
             # Copy all shapes from source slide using deep XML cloning
             for shape in source_slide.shapes:
                 try:
                     el = shape.element
                     newel = deepcopy(el)
+                    
+                    # Update relationship IDs in the copied element to match new relationships
+                    # This handles image references in picture shapes
+                    for old_rid, new_rid in rel_id_map.items():
+                        # Update embed attribute (for images)
+                        for blip in newel.iter():
+                            if blip.tag.endswith('}blip'):
+                                embed_attr = '{http://schemas.openxmlformats.org/officeDocument/2006/relationships}embed'
+                                if blip.get(embed_attr) == old_rid:
+                                    blip.set(embed_attr, new_rid)
+                    
                     new_slide.shapes._spTree.insert_element_before(newel, 'p:extLst')
                 except Exception as e:
                     logger.debug(f"Could not copy shape {getattr(shape, 'name', '')}: {e}")
-            
-            # Copy image and media relationships
-            try:
-                for rel in source_slide.part.rels.values():
-                    if 'image' in rel.reltype or 'media' in rel.reltype:
-                        try:
-                            related_part = rel.target_part
-                            new_slide.part.relate_to(related_part, rel.reltype)
-                        except Exception as e:
-                            logger.debug(f"Could not copy relationship: {e}")
-            except Exception as e:
-                logger.debug(f"Error copying relationships: {e}")
             
             # Save the single-slide presentation
             new_prs.save(str(output_path))

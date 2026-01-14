@@ -25,6 +25,7 @@ def clean_data(confirm: bool = False):
         print("  - All decks and slides from PostgreSQL")
         print("  - All vectors from FAISS index")
         print("  - All thumbnails")
+        print("  - All individual slide files")
         print("  - LLM audit logs")
         print()
         response = input("Are you sure you want to continue? (yes/no): ")
@@ -92,6 +93,22 @@ def clean_data(confirm: bool = False):
                 if item.is_dir():
                     shutil.rmtree(item)
             print(f"  ✓ Deleted thumbnails from {thumbnails_dir}")
+        
+        # Clean individual slide files
+        logger.info("Cleaning individual slide files...")
+        print("\n📄 Cleaning individual slide files...")
+        slides_dir = settings.slides_dir
+        if slides_dir.exists():
+            # Delete all files and subdirectories
+            deleted_count = 0
+            for item in slides_dir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                    deleted_count += 1
+                elif item.is_file():
+                    item.unlink()
+                    deleted_count += 1
+            print(f"  ✓ Deleted {deleted_count} individual slide files from {slides_dir}")
         
         # Clean audit logs (optional - keeping LLM audit trail)
         # Uncomment if you want to delete audit logs too
