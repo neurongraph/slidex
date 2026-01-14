@@ -11,6 +11,7 @@ import numpy as np
 from lightrag import LightRAG, QueryParam
 from lightrag.llm.ollama import ollama_model_complete, ollama_embed
 from lightrag.utils import wrap_embedding_func_with_attrs
+from lightrag.kg.shared_storage import initialize_pipeline_status
 
 from slidex.config import settings
 from slidex.logging_config import logger
@@ -35,15 +36,14 @@ class LightRAGClient:
         # Create embedding function with audit logging wrapper
         @wrap_embedding_func_with_attrs(
             embedding_dim=768,  # nomic-embed-text dimension
-            max_token_size=8192,
-            model_name=settings.ollama_embedding_model
+            max_token_size=8192
         )
         async def embedding_func_with_audit(texts: List[str]) -> np.ndarray:
             """Embedding function with audit logging."""
             start_time = time.time()
             try:
-                # Call ollama_embed
-                result = await ollama_embed.func(
+                # Call ollama_embed directly
+                result = await ollama_embed(
                     texts,
                     embed_model=settings.ollama_embedding_model
                 )
@@ -87,12 +87,12 @@ class LightRAGClient:
             start_time = time.time()
             try:
                 # Call ollama_model_complete
+                # Note: model_name comes from kwargs["hashing_kv"].global_config["llm_model_name"]
+                # which is set during LightRAG initialization
                 response = await ollama_model_complete(
                     prompt,
                     system_prompt=system_prompt,
                     history_messages=history_messages,
-                    model_name=settings.ollama_summary_model,
-                    options={"num_ctx": settings.lightrag_llm_context_size},
                     **kwargs
                 )
                 
@@ -133,6 +133,9 @@ class LightRAGClient:
         
         # Initialize storages
         await self.rag.initialize_storages()
+        
+        # Initialize pipeline status (required for insert operations)
+        await initialize_pipeline_status()
         
         self._initialized = True
         logger.info("LightRAG client initialized successfully")
