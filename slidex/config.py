@@ -53,6 +53,20 @@ class Settings(BaseSettings):
         description="SQLite audit log database path"
     )
     
+    # LightRAG configuration
+    lightrag_working_dir: Path = Field(
+        default=Path("storage/lightrag"),
+        description="LightRAG working directory for graph storage"
+    )
+    lightrag_enabled: bool = Field(
+        default=True,
+        description="Enable LightRAG for indexing and search"
+    )
+    lightrag_llm_context_size: int = Field(
+        default=32768,
+        description="Context size for LightRAG LLM (minimum 32k recommended)"
+    )
+    
     # Processing configuration
     batch_size: int = Field(default=10, description="Batch size for processing")
     thumbnail_width: int = Field(default=320, description="Thumbnail width in pixels")
@@ -88,6 +102,8 @@ class Settings(BaseSettings):
         self.exports_dir.mkdir(parents=True, exist_ok=True)
         self.faiss_index_path.parent.mkdir(parents=True, exist_ok=True)
         self.audit_db_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.lightrag_enabled:
+            self.lightrag_working_dir.mkdir(parents=True, exist_ok=True)
 
 
 # Global settings instance

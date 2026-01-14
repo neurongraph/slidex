@@ -83,13 +83,23 @@ def ingest_folder(
 def search(
     query: str = typer.Argument(..., help="Search query"),
     top_k: int = typer.Option(10, help="Number of results to return"),
+    mode: str = typer.Option("hybrid", help="Query mode: naive, local, global, or hybrid (LightRAG)"),
     json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
-    """Search for slides using semantic search."""
+    """Search for slides using semantic search with LightRAG."""
     try:
-        typer.echo(f"Searching for: '{query}'")
+        # Validate mode
+        valid_modes = ['naive', 'local', 'global', 'hybrid']
+        if mode not in valid_modes:
+            typer.secho(
+                f"Invalid mode '{mode}'. Must be one of: {', '.join(valid_modes)}",
+                fg=typer.colors.RED, err=True
+            )
+            raise typer.Exit(code=1)
         
-        results = search_engine.search(query, top_k=top_k)
+        typer.echo(f"Searching for: '{query}' (mode={mode})")
+        
+        results = search_engine.search(query, top_k=top_k, mode=mode)
         
         if not results:
             typer.secho("No results found.", fg=typer.colors.YELLOW)

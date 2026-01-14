@@ -128,7 +128,11 @@ def api_ingest_folder():
 def api_search():
     """
     Search for slides.
-    Body: { "query": "search text", "top_k": 10 }
+    Body: { 
+        "query": "search text", 
+        "top_k": 10,
+        "mode": "hybrid"  # naive, local, global, or hybrid (LightRAG modes)
+    }
     """
     try:
         data = request.get_json()
@@ -138,15 +142,24 @@ def api_search():
         
         query = data['query']
         top_k = data.get('top_k', settings.top_k_results)
+        mode = data.get('mode', 'hybrid')
         
-        logger.info(f"API: Searching for '{query}' (top_k={top_k})")
+        # Validate mode
+        valid_modes = ['naive', 'local', 'global', 'hybrid']
+        if mode not in valid_modes:
+            return jsonify({
+                'error': f'Invalid mode. Must be one of: {valid_modes}'
+            }), 400
         
-        results = search_engine.search(query, top_k=top_k)
+        logger.info(f"API: Searching for '{query}' (top_k={top_k}, mode={mode})")
+        
+        results = search_engine.search(query, top_k=top_k, mode=mode)
         
         return jsonify({
             'success': True,
             'results': results,
-            'count': len(results)
+            'count': len(results),
+            'mode': mode
         })
     
     except Exception as e:
