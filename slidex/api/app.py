@@ -13,6 +13,7 @@ from slidex.core.ingest import ingest_engine
 from slidex.core.search import search_engine
 from slidex.core.assembler import slide_assembler
 from slidex.core.database import db
+from slidex.core.graph_visualizer import graph_visualizer
 
 
 app = Flask(
@@ -44,6 +45,12 @@ def decks_page():
     """View all decks."""
     decks = db.get_all_decks()
     return render_template('decks.html', decks=decks)
+
+
+@app.route('/graph')
+def graph_page():
+    """Knowledge graph visualization page."""
+    return render_template('graph.html')
 
 
 # ============= API Routes =============
@@ -286,6 +293,46 @@ def api_get_decks():
         })
     except Exception as e:
         logger.error(f"API error getting decks: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/graph/data', methods=['GET'])
+def api_graph_data():
+    """Get knowledge graph data for visualization."""
+    try:
+        if not settings.lightrag_enabled:
+            return jsonify({
+                'error': 'LightRAG is not enabled'
+            }), 400
+        
+        graph_data = graph_visualizer.export_graph_data()
+        return jsonify({
+            'success': True,
+            'graph': graph_data
+        })
+    
+    except Exception as e:
+        logger.error(f"API error getting graph data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/graph/stats', methods=['GET'])
+def api_graph_stats():
+    """Get knowledge graph statistics."""
+    try:
+        if not settings.lightrag_enabled:
+            return jsonify({
+                'error': 'LightRAG is not enabled'
+            }), 400
+        
+        stats = graph_visualizer.get_graph_stats()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+    
+    except Exception as e:
+        logger.error(f"API error getting graph stats: {e}")
         return jsonify({'error': str(e)}), 500
 
 

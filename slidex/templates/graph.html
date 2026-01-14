@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+
+{% block title %}Knowledge Graph - Slidex{% endblock %}
+
+{% block extra_css %}
+<style>
+    #graph-container {
+        width: 100%;
+        height: 700px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: white;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #3498db;
+    }
+    
+    .stat-label {
+        color: #666;
+        margin-top: 0.5rem;
+    }
+    
+    .controls {
+        margin-bottom: 1rem;
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+    
+    .legend {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-top: 1rem;
+    }
+    
+    .legend-item {
+        display: inline-flex;
+        align-items: center;
+        margin-right: 1.5rem;
+    }
+    
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h1>Knowledge Graph Visualization</h1>
+    <p>Interactive view of entities and relationships extracted from your slides by LightRAG.</p>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-value" id="node-count">-</div>
+        <div class="stat-label">Nodes (Entities)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="edge-count">-</div>
+        <div class="stat-label">Edges (Relationships)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="density">-</div>
+        <div class="stat-label">Graph Density</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="avg-degree">-</div>
+        <div class="stat-label">Avg Connections</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="controls">
+        <button onclick="fitGraph()">Fit to Screen</button>
+        <button onclick="resetZoom()">Reset Zoom</button>
+        <button onclick="loadGraph()">Refresh</button>
+        <label>
+            <input type="checkbox" id="show-labels" checked onchange="toggleLabels()">
+            Show Labels
+        </label>
+    </div>
+    
+    <div id="graph-container"></div>
+    
+    <div class="legend">
+        <strong>Legend:</strong>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #3498db;"></div>
+            <span>Entity</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #2ecc71;"></div>
+            <span>Chunk</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background: #e74c3c;"></div>
+            <span>Other</span>
+        </div>
+    </div>
+</div>
+
+<div id="loading" class="loading" style="display: none;">
+    Loading knowledge graph...
+</div>
+
+<div id="error-message" class="alert alert-error" style="display: none;"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.26.0/cytoscape.min.js"></script>
+<script>
+let cy;
+
+async function loadGraph() {
+    const loading = document.getElementById('loading');
+    const errorMsg = document.getElementById('error-message');
+    
+    loading.style.display = 'block';
+    errorMsg.style.display = 'none';
+    
+    try {
+        // Load graph data
+        const response = await fetch('/api/graph/data');
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load graph');
+        }
+        
+        const graphData = data.graph;
+        
+        // Update stats
+        document.getElementById('node-count').textContent = graphData.stats?.node_count || 0;
+        document.getElementById('edge-count').textContent = graphData.stats?.edge_count || 0;
+        
+        // Load additional stats
+        const statsResponse = await fetch('/api/graph/stats');
+        const statsData = await statsResponse.json();
+        
+        if (statsData.success) {
+            document.getElementById('density').textContent = 
+                statsData.stats.density ? statsData.stats.density.toFixed(3) : '-';
+            document.getElementById('avg-degree').textContent = 
+                statsData.stats.avg_degree ? statsData.stats.avg_degree.toFixed(1) : '-';
+        }
+        
+        // Initialize Cytoscape
+        if (cy) {
+            cy.destroy();
+        }
+        
+        cy = cytoscape({
+            container: document.getElementById('graph-container'),
+            
+            elements: [
+                ...graphData.nodes,
+                ...graphData.edges
+            ],
+            
+            style: [
+                {
+                    selector: 'node',
+                    style: {
+                        'background-color': '#3498db',
+                        'label': 'data(label)',
+                        'width': 30,
+                        'height': 30,
+                        'font-size': '10px',
+                        'text-valign': 'bottom',
+                        'text-halign': 'center',
+                        'text-margin-y': 5
+                    }
+                },
+                {
+                    selector: 'node[type="chunk"]',
+                    style: {
+                        'background-color': '#2ecc71'
+                    }
+                },
+                {
+                    selector: 'node[type="entity"]',
+                    style: {
+                        'background-color': '#3498db'
+                    }
+                },
+                {
+                    selector: 'edge',
+                    style: {
+                        'width': 2,
+                        'line-color': '#95a5a6',
+                        'target-arrow-color': '#95a5a6',
+                        'target-arrow-shape': 'triangle',
+                        'curve-style': 'bezier',
+                        'label': 'data(label)',
+                        'font-size': '8px',
+                        'text-rotation': 'autorotate'
+                    }
+                }
+            ],
+            
+            layout: {
+                name: 'cose',
+                idealEdgeLength: 100,
+                nodeOverlap: 20,
+                refresh: 20,
+                fit: true,
+                padding: 30,
+                randomize: false,
+                componentSpacing: 100,
+                nodeRepulsion: 400000,
+                edgeElasticity: 100,
+                nestingFactor: 5,
+                gravity: 80,
+                numIter: 1000,
+                initialTemp: 200,
+                coolingFactor: 0.95,
+                minTemp: 1.0
+            }
+        });
+        
+        // Add tooltips on hover
+        cy.on('tap', 'node', function(evt) {
+            const node = evt.target;
+            console.log('Node clicked:', node.data());
+            alert(`Entity: ${node.data('label')}\nType: ${node.data('type')}\nDescription: ${node.data('description') || 'N/A'}`);
+        });
+        
+        cy.on('tap', 'edge', function(evt) {
+            const edge = evt.target;
+            console.log('Edge clicked:', edge.data());
+        });
+        
+    } catch (error) {
+        console.error('Error loading graph:', error);
+        errorMsg.textContent = error.message;
+        errorMsg.style.display = 'block';
+    } finally {
+        loading.style.display = 'none';
+    }
+}
+
+function fitGraph() {
+    if (cy) {
+        cy.fit();
+    }
+}
+
+function resetZoom() {
+    if (cy) {
+        cy.zoom(1);
+        cy.center();
+    }
+}
+
+function toggleLabels() {
+    const showLabels = document.getElementById('show-labels').checked;
+    if (cy) {
+        if (showLabels) {
+            cy.style()
+                .selector('node')
+                .style('label', 'data(label)')
+                .selector('edge')
+                .style('label', 'data(label)')
+                .update();
+        } else {
+            cy.style()
+                .selector('node')
+                .style('label', '')
+                .selector('edge')
+                .style('label', '')
+                .update();
+        }
+    }
+}
+
+// Load graph on page load
+window.addEventListener('DOMContentLoaded', loadGraph);
+</script>
+{% endblock %}
