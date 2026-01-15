@@ -120,50 +120,82 @@ class SearchEngine:
         """
         LightRAG-based search with context-aware retrieval.
         
-        LightRAG returns a natural language response synthesized from relevant documents.
-        We extract slide IDs mentioned in the response and return those slides.
+        Strategy:
+        1. Get raw context chunks from LightRAG (contains [SLIDE_ID:uuid] markers)
+        2. Extract slide IDs from markers
+        3. Generate natural language response for display
+        4. Fallback to FAISS if extraction fails
         """
         try:
-            # Query LightRAG
-            response = lightrag_client.query(query, mode=mode, top_k=top_k)
+            # Step 1: Get raw context chunks with slide IDs
+            from lightrag import QueryParam
             
-            if not response:
-                logger.info("No results from LightRAG")
+            # Initialize LightRAG if not already done
+            if not lightrag_client._initialized:
+                lightrag_client.initialize()
+            
+            logger.debug("Retrieving context chunks from LightRAG")
+            context = lightrag_client.rag.query(
+                query,
+                param=QueryParam(
+                    mode=mode,
+                    only_need_context=True,
+                    top_k=top_k
+                )
+            )
+            
+            if not context:
+                logger.info("No context from LightRAG")
                 return []
             
-            logger.debug(f"LightRAG response length: {len(response)}")
+            logger.debug(f"LightRAG context length: {len(context)}")
             
-            # Extract slide IDs from the response
-            # LightRAG may reference document IDs in its response
-            # Look for UUID patterns (slide_ids)
-            uuid_pattern = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-            found_slide_ids = re.findall(uuid_pattern, response, re.IGNORECASE)
+            # Step 2: Extract [SLIDE_ID:uuid] markers from context
+            marker_pattern = r'\[SLIDE_ID:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]'
+            slide_ids = re.findall(marker_pattern, context, re.IGNORECASE)
             
-            if not found_slide_ids:
-                # Fallback: return all slides sorted by relevance using FAISS
-                logger.warning("No slide IDs found in LightRAG response, falling back to FAISS")
+            if not slide_ids:
+                logger.warning("No slide IDs found in LightRAG context, falling back to FAISS")
                 return SearchEngine._search_with_faiss(query, top_k)
+            
+            logger.info(f"Extracted {len(slide_ids)} slide IDs from context markers")
             
             # Remove duplicates while preserving order
             seen = set()
             unique_slide_ids = []
-            for sid in found_slide_ids:
-                if sid not in seen:
-                    seen.add(sid)
-                    unique_slide_ids.append(sid)
+            for sid in slide_ids:
+                sid_lower = sid.lower()
+                if sid_lower not in seen:
+                    seen.add(sid_lower)
+                    unique_slide_ids.append(sid_lower)
             
             # Limit to top_k
             unique_slide_ids = unique_slide_ids[:top_k]
             
-            logger.info(f"Found {len(unique_slide_ids)} unique slide IDs in LightRAG response")
+            logger.info(f"Found {len(unique_slide_ids)} unique slide IDs from LightRAG")
             
-            # Retrieve slide metadata from database
+            # Step 3: Generate natural language response (optional, for display)
+            response_text = None
+            try:
+                logger.debug("Generating natural language response")
+                response_result = lightrag_client.query(
+                    query,
+                    mode=mode,
+                    top_k=top_k,
+                    include_references=False
+                )
+                response_text = response_result.get('response', '') if isinstance(response_result, dict) else response_result
+            except Exception as e:
+                logger.warning(f"Error generating response text: {e}")
+                response_text = f"Found {len(unique_slide_ids)} relevant slides for query: {query}"
+            
+            # Step 4: Retrieve slide metadata from database
             results = []
             for idx, slide_id in enumerate(unique_slide_ids):
                 slide = db.get_slide_by_id(slide_id)
                 if slide:
                     # Assign score based on position (earlier = higher score)
-                    score = 1.0 - (idx / len(unique_slide_ids))
+                    score = 1.0 - (idx / len(unique_slide_ids)) if len(unique_slide_ids) > 1 else 1.0
                     
                     result = {
                         'slide_id': slide['slide_id'],
@@ -176,9 +208,15 @@ class SearchEngine:
                         'plain_text_preview': slide['plain_text'][:200] if slide['plain_text'] else '',
                         'thumbnail_path': slide['thumbnail_path'],
                         'score': score,
-                        'lightrag_response': response if idx == 0 else None,  # Include full response with first result
+                        'lightrag_response': response_text if idx == 0 else None,  # Include full response with first result
                     }
                     results.append(result)
+                else:
+                    logger.warning(f"Slide not found in database: {slide_id}")
+            
+            if not results:
+                logger.warning("No valid slides found, falling back to FAISS")
+                return SearchEngine._search_with_faiss(query, top_k)
             
             logger.info(f"Returning {len(results)} search results from LightRAG")
             return results

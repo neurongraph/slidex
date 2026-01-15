@@ -169,12 +169,15 @@ class LightRAGClient:
         
         logger.debug(f"Inserting document into LightRAG: {document_id}")
         
-        # Prepare document with metadata
+        # Prepare document with metadata and explicit slide ID marker
         doc_text = text
         if metadata:
             # Prepend metadata as context
             meta_str = " | ".join([f"{k}: {v}" for k, v in metadata.items()])
             doc_text = f"[{meta_str}]\n{text}"
+        
+        # Add explicit slide ID marker for reliable extraction
+        doc_text = f"[SLIDE_ID:{document_id}]\n{doc_text}"
         
         try:
             # Insert document with ID
@@ -210,6 +213,9 @@ class LightRAGClient:
                 meta_str = " | ".join([f"{k}: {v}" for k, v in metadata.items()])
                 text = f"[{meta_str}]\n{text}"
             
+            # Add explicit slide ID marker for reliable extraction
+            text = f"[SLIDE_ID:{doc_id}]\n{text}"
+            
             texts.append(text)
             ids.append(doc_id)
         
@@ -226,8 +232,9 @@ class LightRAGClient:
         self,
         query_text: str,
         mode: Literal["naive", "local", "global", "hybrid"] = "hybrid",
-        top_k: Optional[int] = None
-    ) -> str:
+        top_k: Optional[int] = None,
+        include_references: bool = True
+    ) -> Dict[str, Any]:
         """
         Query LightRAG for relevant documents.
         
@@ -235,24 +242,36 @@ class LightRAGClient:
             query_text: Search query
             mode: Query mode (naive, local, global, hybrid)
             top_k: Number of results (currently LightRAG handles this internally)
+            include_references: Whether to request source references from LightRAG
             
         Returns:
-            Query response as text
+            Dict with 'response' (text) and optionally 'references' (list)
         """
         if not self._initialized:
             self.initialize()
         
-        logger.info(f"Querying LightRAG: '{query_text}' (mode={mode})")
+        logger.info(f"Querying LightRAG: '{query_text}' (mode={mode}, include_references={include_references})")
         
         try:
-            # Create query parameters
-            query_param = QueryParam(mode=mode)
+            # Create query parameters with reference inclusion
+            query_param = QueryParam(
+                mode=mode,
+                include_references=include_references,
+                top_k=top_k if top_k else 40
+            )
             
             # Execute query
             result = self.rag.query(query_text, param=query_param)
             
-            logger.debug(f"Query complete, result length: {len(result) if result else 0}")
-            return result
+            # LightRAG may return enhanced response with references
+            # Check if result contains reference information
+            if isinstance(result, dict) and 'response' in result:
+                logger.debug(f"Query complete with structured response")
+                return result
+            else:
+                # Fallback: plain text response
+                logger.debug(f"Query complete, result length: {len(result) if result else 0}")
+                return {'response': result, 'references': None}
             
         except Exception as e:
             logger.error(f"Error querying LightRAG: {e}")
