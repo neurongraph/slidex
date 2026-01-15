@@ -55,8 +55,40 @@ class SlideAssembler:
         if not slides_data:
             raise ValueError("No valid slides found")
         
-        # Create new presentation
+        # Determine the most common slide dimensions to use for the output
+        dimensions_count = {}
+        for slide_data in slides_data:
+            slide_file_path = slide_data.get('slide_file_path')
+            try:
+                if slide_file_path and Path(slide_file_path).exists():
+                    temp_prs = Presentation(slide_file_path)
+                else:
+                    deck_path = slide_data['deck_path']
+                    temp_prs = Presentation(deck_path)
+                
+                dim = (temp_prs.slide_width, temp_prs.slide_height)
+                dimensions_count[dim] = dimensions_count.get(dim, 0) + 1
+            except Exception:
+                pass
+        
+        # Use the most common dimensions, or default to 16:9 widescreen
+        if dimensions_count:
+            target_dimensions = max(dimensions_count.items(), key=lambda x: x[1])[0]
+        else:
+            # Default to 16:9 widescreen (10 inches x 5.625 inches)
+            target_dimensions = (9144000, 5143500)
+        
+        logger.info(f"Using slide dimensions: {target_dimensions[0]} x {target_dimensions[1]}")
+        if len(dimensions_count) > 1:
+            logger.warning(f"Mixed slide dimensions detected: {dimensions_count}. Normalizing to most common size.")
+        
+        # Create new presentation with target dimensions
         new_prs = Presentation()
+        new_prs.slide_width = target_dimensions[0]
+        new_prs.slide_height = target_dimensions[1]
+        
+        # Track added images to avoid duplicates
+        image_cache = {}  # blob hash -> part
         
         # Process slides in the requested order
         if preserve_order:
@@ -86,8 +118,8 @@ class SlideAssembler:
                     source_slide = source_prs.slides[slide_index]
                     logger.debug(f"Loaded slide from original deck: {deck_path} (index {slide_index})")
                 
-                # Copy slide to new presentation
-                SlideAssembler._copy_slide(source_slide, new_prs)
+                # Copy slide to new presentation with image cache
+                SlideAssembler._copy_slide(source_slide, new_prs, image_cache)
                 
                 logger.debug(
                     f"Copied slide: {slide_data.get('title_header') or 'Untitled'}"
@@ -117,17 +149,20 @@ class SlideAssembler:
         return output_path
     
     @staticmethod
-    def _copy_slide(source_slide, target_presentation: Presentation) -> None:
+    def _copy_slide(source_slide, target_presentation: Presentation, image_cache: dict = None) -> None:
         """
         Copy a slide from source to target presentation using deep XML cloning.
         This preserves all formatting, shapes, images, and content.
+        
+        Args:
+            source_slide: Source slide to copy
+            target_presentation: Target presentation
+            image_cache: Optional dict to track already-added images (blob hash -> part)
+        
+        Note: Target presentation dimensions should already be set before calling this.
         """
-        # Copy slide dimensions if this is the first slide
-        if len(target_presentation.slides) == 0:
-            # Get dimensions from the source presentation
-            src_prs = source_slide.part.package.presentation_part.presentation
-            target_presentation.slide_width = src_prs.slide_width
-            target_presentation.slide_height = src_prs.slide_height
+        if image_cache is None:
+            image_cache = {}
         
         # Get a blank slide layout from target
         blank_layout = target_presentation.slide_layouts[6]
@@ -164,18 +199,31 @@ class SlideAssembler:
                             target_pkg = target_presentation.part.package
 
                             if blob is not None and content_type:
-                                # Prefer public helper if available (some versions expose helpers)
-                                if hasattr(target_pkg, 'get_or_add_image_part'):
-                                    try:
-                                        new_part = target_pkg.get_or_add_image_part(blob)
-                                    except Exception:
-                                        new_part = None
-                                # Generic fallback: try to use package API if available
-                                if new_part is None and hasattr(target_pkg, 'get_or_add_part'):
-                                    try:
-                                        new_part = target_pkg.get_or_add_part(content_type, io.BytesIO(blob))
-                                    except Exception:
-                                        new_part = None
+                                # Check if we've already added this image
+                                import hashlib
+                                blob_hash = hashlib.md5(blob).hexdigest()
+                                
+                                if blob_hash in image_cache:
+                                    # Reuse existing part
+                                    new_part = image_cache[blob_hash]
+                                    logger.debug(f"Reusing cached image: {blob_hash[:8]}...")
+                                else:
+                                    # Add new image part
+                                    # Prefer public helper if available (some versions expose helpers)
+                                    if hasattr(target_pkg, 'get_or_add_image_part'):
+                                        try:
+                                            new_part = target_pkg.get_or_add_image_part(blob)
+                                            image_cache[blob_hash] = new_part
+                                        except Exception:
+                                            new_part = None
+                                    # Generic fallback: try to use package API if available
+                                    if new_part is None and hasattr(target_pkg, 'get_or_add_part'):
+                                        try:
+                                            new_part = target_pkg.get_or_add_part(content_type, io.BytesIO(blob))
+                                            if new_part:
+                                                image_cache[blob_hash] = new_part
+                                        except Exception:
+                                            new_part = None
                         except Exception as e:
                             logger.debug(f"Could not duplicate related part blob: {e}")
 
