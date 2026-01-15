@@ -186,6 +186,7 @@
                                 type="checkbox" 
                                 id="slide_${result.slide_id}" 
                                 onchange="toggleSlide('${result.slide_id}')"
+                                ${selectedSlides.has(result.slide_id) ? 'checked' : ''}
                             >
                             <label for="slide_${result.slide_id}">Select</label>
                         </div>
