@@ -3,9 +3,137 @@
 {% block title %}Search - Slidex{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/marked-highlight@2.0.1/lib/index.css">
 <style>
     .search-form {
         margin-bottom: 2rem;
+    }
+    
+    .lightrag-answer {
+        background: #f8fafc;
+        border-left: 4px solid #3b82f6;
+        border-radius: 4px;
+        margin-bottom: 1.5rem;
+    }
+    
+    .collapsible-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem 1.5rem;
+        cursor: pointer;
+        user-select: none;
+        background: #f8fafc;
+        border-radius: 4px;
+    }
+    
+    .collapsible-header:hover {
+        background: #f1f5f9;
+    }
+    
+    .collapsible-header h3 {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .collapse-icon {
+        font-size: 1.2rem;
+        transition: transform 0.3s ease;
+    }
+    
+    .collapse-icon.collapsed {
+        transform: rotate(-90deg);
+    }
+    
+    .collapsible-content {
+        padding: 0 1.5rem 1.5rem 1.5rem;
+        overflow: hidden;
+        max-height: 1000px;
+        transition: max-height 0.3s ease, padding 0.3s ease;
+    }
+    
+    .collapsible-content.collapsed {
+        max-height: 0;
+        padding: 0 1.5rem;
+    }
+    
+    .lightrag-answer-content {
+        line-height: 1.6;
+    }
+    
+    .lightrag-answer-content h1,
+    .lightrag-answer-content h2,
+    .lightrag-answer-content h3,
+    .lightrag-answer-content h4,
+    .lightrag-answer-content h5,
+    .lightrag-answer-content h6 {
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+    
+    .lightrag-answer-content p {
+        margin-bottom: 1rem;
+    }
+    
+    .lightrag-answer-content ul,
+    .lightrag-answer-content ol {
+        margin-bottom: 1rem;
+        padding-left: 2rem;
+    }
+    
+    .lightrag-answer-content li {
+        margin-bottom: 0.5rem;
+    }
+    
+    .lightrag-answer-content code {
+        background: #e5e7eb;
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9em;
+    }
+    
+    .lightrag-answer-content pre {
+        background: #1e293b;
+        color: #e2e8f0;
+        padding: 1rem;
+        border-radius: 4px;
+        overflow-x: auto;
+        margin-bottom: 1rem;
+    }
+    
+    .lightrag-answer-content pre code {
+        background: none;
+        padding: 0;
+        color: inherit;
+    }
+    
+    .lightrag-answer-content blockquote {
+        border-left: 3px solid #cbd5e1;
+        padding-left: 1rem;
+        margin-left: 0;
+        color: #64748b;
+    }
+    
+    .lightrag-answer-content table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-bottom: 1rem;
+    }
+    
+    .lightrag-answer-content th,
+    .lightrag-answer-content td {
+        border: 1px solid #e5e7eb;
+        padding: 0.5rem;
+        text-align: left;
+    }
+    
+    .lightrag-answer-content th {
+        background: #f1f5f9;
+        font-weight: 600;
     }
     
     .search-input-group {
@@ -16,6 +144,43 @@
     
     .search-input-group input {
         flex: 1;
+    }
+    
+    .results-section {
+        margin-top: 1.5rem;
+    }
+    
+    .results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        cursor: pointer;
+        user-select: none;
+        margin-bottom: 1rem;
+    }
+    
+    .results-header:hover {
+        background: #f9fafb;
+    }
+    
+    .results-header h3 {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .results-container {
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+    }
+    
+    .results-container.collapsed {
+        max-height: 0;
     }
     
     .results {
@@ -112,9 +277,19 @@
         </div>
     </form>
     
-    <div id="lightragResponse" style="margin-top: 1rem; margin-bottom: 1rem; display: none;"></div>
+    <div id="lightragResponse" style="margin-top: 1rem; display: none;"></div>
 
-    <div id="results"></div>
+    <div id="resultsSection" class="results-section" style="display: none;">
+        <div class="results-header" onclick="toggleResultsSection()">
+            <h3>
+                <span class="collapse-icon" id="resultsCollapseIcon">▼</span>
+                <span id="resultsTitle">Slides</span>
+            </h3>
+        </div>
+        <div id="resultsContainer" class="results-container">
+            <div id="results"></div>
+        </div>
+    </div>
     
     <div class="assemble-section" id="assembleSection">
         <div class="container">
@@ -127,6 +302,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
 <script>
     let selectedSlides = new Set();
     
@@ -165,10 +341,18 @@
         // Render LightRAG textual answer if provided
         if (lightragResponse && typeof lightragResponse === 'string') {
             lightragDiv.style.display = 'block';
+            const markdownHtml = marked.parse(lightragResponse);
             lightragDiv.innerHTML = `
-                <div class="card" style="background:#f8fafc; border-left:4px solid #3b82f6;">
-                    <h3>Answer</h3>
-                    <p>${lightragResponse.replace(/\n/g, '<br>')}</p>
+                <div class="lightrag-answer">
+                    <div class="collapsible-header" onclick="toggleAnswerSection()">
+                        <h3>
+                            <span class="collapse-icon" id="answerCollapseIcon">▼</span>
+                            Answer
+                        </h3>
+                    </div>
+                    <div class="collapsible-content" id="answerContent">
+                        <div class="lightrag-answer-content">${markdownHtml}</div>
+                    </div>
                 </div>
             `;
         } else {
@@ -176,10 +360,16 @@
             lightragDiv.innerHTML = '';
         }
         
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsTitle = document.getElementById('resultsTitle');
+        
         if (results.length === 0) {
-            resultsDiv.innerHTML = '<p>No results found.</p>';
+            resultsSection.style.display = 'none';
             return;
         }
+        
+        resultsSection.style.display = 'block';
+        resultsTitle.textContent = `Slides (${results.length} results)`;
         
         let html = '<div class="results">';
         
@@ -235,6 +425,22 @@
         } else {
             document.getElementById('assembleSection').classList.remove('show');
         }
+    }
+    
+    function toggleAnswerSection() {
+        const content = document.getElementById('answerContent');
+        const icon = document.getElementById('answerCollapseIcon');
+        
+        content.classList.toggle('collapsed');
+        icon.classList.toggle('collapsed');
+    }
+    
+    function toggleResultsSection() {
+        const container = document.getElementById('resultsContainer');
+        const icon = document.getElementById('resultsCollapseIcon');
+        
+        container.classList.toggle('collapsed');
+        icon.classList.toggle('collapsed');
     }
     
     async function assembleSlides() {
