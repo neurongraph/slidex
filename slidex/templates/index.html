@@ -112,6 +112,8 @@
         </div>
     </form>
     
+    <div id="lightragResponse" style="margin-top: 1rem; margin-bottom: 1rem; display: none;"></div>
+
     <div id="results"></div>
     
     <div class="assemble-section" id="assembleSection">
@@ -147,7 +149,7 @@
             const data = await response.json();
             
             if (data.success) {
-                displayResults(data.results);
+                displayResults(data.results, data.lightrag_response);
             } else {
                 resultsDiv.innerHTML = '<div class="alert alert-error">Error: ' + (data.error || 'Unknown error') + '</div>';
             }
@@ -156,8 +158,23 @@
         }
     });
     
-    function displayResults(results) {
+    function displayResults(results, lightragResponse) {
         const resultsDiv = document.getElementById('results');
+        const lightragDiv = document.getElementById('lightragResponse');
+
+        // Render LightRAG textual answer if provided
+        if (lightragResponse && typeof lightragResponse === 'string') {
+            lightragDiv.style.display = 'block';
+            lightragDiv.innerHTML = `
+                <div class="card" style="background:#f8fafc; border-left:4px solid #3b82f6;">
+                    <h3>Answer</h3>
+                    <p>${lightragResponse.replace(/\n/g, '<br>')}</p>
+                </div>
+            `;
+        } else {
+            lightragDiv.style.display = 'none';
+            lightragDiv.innerHTML = '';
+        }
         
         if (results.length === 0) {
             resultsDiv.innerHTML = '<p>No results found.</p>';

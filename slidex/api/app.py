@@ -133,13 +133,16 @@ def api_ingest_folder():
 
 @app.route('/api/search', methods=['POST'])
 def api_search():
-    """
-    Search for slides.
+    """Search for slides.
+
     Body: { 
         "query": "search text", 
         "top_k": 10,
         "mode": "hybrid"  # naive, local, global, or hybrid (LightRAG modes)
     }
+
+    When LightRAG is enabled, the response also includes a natural language
+    answer in `lightrag_response` summarizing the query.
     """
     try:
         data = request.get_json()
@@ -161,12 +164,21 @@ def api_search():
         logger.info(f"API: Searching for '{query}' (top_k={top_k}, mode={mode})")
         
         results = search_engine.search(query, top_k=top_k, mode=mode)
+
+        # Extract LightRAG's natural language answer if present (stored on the
+        # first result in LightRAG mode).
+        lightrag_response = None
+        for r in results:
+            if isinstance(r, dict) and r.get('lightrag_response'):
+                lightrag_response = r['lightrag_response']
+                break
         
         return jsonify({
             'success': True,
             'results': results,
             'count': len(results),
-            'mode': mode
+            'mode': mode,
+            'lightrag_response': lightrag_response,
         })
     
     except Exception as e:
