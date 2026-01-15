@@ -135,14 +135,17 @@ class SlideProcessor:
         presentation: Presentation,
         slide_index: int,
         output_path: Path,
-        width: int = 320
+        width: int = 320,
+        deck_pdf_path: Optional[Path] = None,
     ) -> None:
         """
         Generate a thumbnail image for a slide.
-        
-        Uses a hybrid approach:
-        1. Try LibreOffice for high-quality rendering
-        2. Fall back to enhanced Pillow rendering if LibreOffice unavailable
+
+        Preferred strategy:
+        1. If a deck-level PDF is available, render the corresponding PDF page
+           for a pixel-perfect preview.
+        2. Fall back to enhanced Pillow rendering if PDF rendering is not
+           available or fails.
         
         Args:
             presentation: The PowerPoint presentation
@@ -151,168 +154,25 @@ class SlideProcessor:
             width: Width of the thumbnail in pixels
         """
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Try LibreOffice first for best quality
-        if SlideProcessor._try_libreoffice_thumbnail(presentation, slide_index, output_path, width):
-            return
-        
+
+        # Prefer PDF-based rendering when a deck PDF is available
+        if deck_pdf_path is not None:
+            try:
+                from slidex.core.pdf_processor import pdf_processor
+
+                img = pdf_processor.render_page_to_image(deck_pdf_path, slide_index, width)
+                if img is not None:
+                    img.save(output_path, "PNG")
+                    logger.debug(
+                        f"PDF-based thumbnail generated: {output_path} (page {slide_index})"
+                    )
+                    return
+            except Exception as e:  # pragma: no cover - defensive
+                logger.error(f"PDF-based thumbnail generation failed: {e}")
+
         # Fall back to enhanced Pillow rendering
         SlideProcessor._generate_pillow_thumbnail(presentation, slide_index, output_path, width)
     
-    @staticmethod
-    def _find_libreoffice() -> Optional[str]:
-        """
-        Find LibreOffice executable in PATH or common macOS location.
-        
-        Returns:
-            Path to libreoffice/soffice executable, or None if not found
-        """
-        # Check if libreoffice is in PATH
-        result = subprocess.run(
-            ["which", "libreoffice"],
-            capture_output=True,
-            timeout=2
-        )
-        if result.returncode == 0:
-            return result.stdout.decode().strip()
-        
-        # Check macOS standard location
-        macos_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
-        if Path(macos_path).exists():
-            return macos_path
-        
-        # Check for soffice in PATH (alternative name)
-        result = subprocess.run(
-            ["which", "soffice"],
-            capture_output=True,
-            timeout=2
-        )
-        if result.returncode == 0:
-            return result.stdout.decode().strip()
-        
-        return None
-    
-    @staticmethod
-    def _try_libreoffice_thumbnail(
-        presentation: Presentation,
-        slide_index: int,
-        output_path: Path,
-        width: int
-    ) -> bool:
-        """
-        Try to generate thumbnail using LibreOffice.
-        
-        Returns:
-            True if successful, False if LibreOffice not available
-        """
-        try:
-            # Find LibreOffice executable
-            libreoffice_path = SlideProcessor._find_libreoffice()
-            if not libreoffice_path:
-                logger.debug("LibreOffice not found, will use Pillow fallback")
-                return False
-            
-            # Create a temporary PPTX file with just the target slide
-            with tempfile.TemporaryDirectory() as temp_dir:
-                temp_dir_path = Path(temp_dir)
-                
-                # Create a new presentation with just the target slide
-                try:
-                    slide_to_export = presentation.slides[slide_index]
-                    
-                    # Create a minimal presentation with just this slide
-                    temp_pres = Presentation()
-                    
-                    # Copy slide dimensions
-                    try:
-                        src_prs = presentation
-                        temp_pres.slide_width = src_prs.slide_width
-                        temp_pres.slide_height = src_prs.slide_height
-                    except:
-                        pass
-                    
-                    # Add blank slide with same layout
-                    blank_slide_layout = temp_pres.slide_layouts[6]  # Blank layout
-                    new_slide = temp_pres.slides.add_slide(blank_slide_layout)
-                    
-                    # Copy shapes from original slide to new slide
-                    # This includes text, images, and all other shape types
-                    for shape in slide_to_export.shapes:
-                        try:
-                            el = shape.element
-                            newel = deepcopy(el)
-                            new_slide.shapes._spTree.insert_element_before(newel, 'p:extLst')
-                        except Exception as e:
-                            logger.debug(f"Could not copy shape {shape.name}: {e}")
-                            pass  # Skip shapes that can't be copied
-                    
-                    # Copy image relationships if they exist
-                    try:
-                        for rel in slide_to_export.part.rels.values():
-                            # Copy image and other media relationships
-                            if 'image' in rel.reltype or 'media' in rel.reltype:
-                                try:
-                                    # Get the related part
-                                    related_part = rel.target_part
-                                    # Create equivalent relationship in new slide
-                                    new_slide.part.relate_to(related_part, rel.reltype)
-                                except:
-                                    pass  # Skip if relationship can't be copied
-                    except:
-                        pass
-                    
-                    temp_pptx = temp_dir_path / "slide.pptx"
-                    temp_pres.save(str(temp_pptx))
-                    pptx_path = temp_pptx
-                    
-                except Exception as e:
-                    logger.debug(f"Failed to create single-slide presentation: {e}")
-                    return False
-                
-                # Use LibreOffice to export the slide as PNG
-                soffice_cmd = [
-                    libreoffice_path,
-                    "--headless",
-                    "--convert-to", "png",
-                    "--outdir", str(temp_dir_path),
-                    str(pptx_path)
-                ]
-                
-                result = subprocess.run(
-                    soffice_cmd,
-                    capture_output=True,
-                    timeout=30
-                )
-                
-                if result.returncode != 0:
-                    logger.debug(f"LibreOffice conversion failed: {result.stderr.decode()}")
-                    return False
-                
-                # Find the exported PNG
-                png_files = list(temp_dir_path.glob("*.png"))
-                
-                if not png_files:
-                    logger.debug("LibreOffice did not create any PNG files")
-                    return False
-                
-                source_png = png_files[0]
-                
-                # Resize to target width while maintaining aspect ratio
-                img = Image.open(source_png)
-                if img.width != width:
-                    height = int(width * img.height / img.width)
-                    img = img.resize((width, height), Image.Resampling.LANCZOS)
-                
-                img.save(output_path, 'PNG')
-                logger.debug(f"LibreOffice thumbnail generated: {output_path}")
-                return True
-        
-        except subprocess.TimeoutExpired:
-            logger.debug("LibreOffice conversion timed out")
-            return False
-        except Exception as e:
-            logger.debug(f"LibreOffice thumbnail generation failed: {e}")
-            return False
     
     @staticmethod
     def _generate_pillow_thumbnail(

@@ -117,7 +117,8 @@
     <div class="assemble-section" id="assembleSection">
         <div class="container">
             <span id="selectedCount">0 slides selected</span>
-            <button onclick="assembleSlides()">Assemble Presentation</button>
+
+            <button onclick="assembleSlides()">Assemble Presentation (PPTX + PDF)</button>
         </div>
     </div>
 </div>
@@ -228,15 +229,17 @@
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     slide_ids: Array.from(selectedSlides),
-                    preserve_order: true
-                })
+                    preserve_order: true,
+                }),
             });
             
             const data = await response.json();
             
             if (data.success) {
-                alert('Presentation assembled successfully!');
-                window.location.href = data.download_url;
+                alert('PPTX and PDF assembled successfully!');
+                // Trigger PPTX download and open PDF in a new tab
+                window.location.href = data.pptx_download_url;
+                window.open(data.pdf_download_url, '_blank');
             } else {
                 alert('Error: ' + (data.error || 'Unknown error'));
             }

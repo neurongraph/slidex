@@ -101,6 +101,9 @@ class Database:
         thumbnail_path: str,
         original_slide_position: int,
         slide_file_path: Optional[str] = None,
+        slide_pdf_path: Optional[str] = None,
+        requires_pdf: bool = False,
+        complexity_score: int = 0,
     ) -> str:
         """
         Insert a new slide into the database.
@@ -119,6 +122,9 @@ class Database:
             thumbnail_path=thumbnail_path,
             original_slide_position=original_slide_position,
             slide_file_path=slide_file_path,
+            slide_pdf_path=slide_pdf_path,
+            requires_pdf=requires_pdf,
+            complexity_score=complexity_score,
         )
         return slide_id
     
@@ -133,6 +139,9 @@ class Database:
         thumbnail_path: str,
         original_slide_position: int,
         slide_file_path: Optional[str] = None,
+        slide_pdf_path: Optional[str] = None,
+        requires_pdf: bool = False,
+        complexity_score: int = 0,
     ) -> None:
         """
         Insert a new slide with a pre-generated slide_id.
@@ -145,12 +154,25 @@ class Database:
                 """
                 INSERT INTO slides 
                 (slide_id, deck_id, slide_index, title_header, plain_text, 
-                 summary_10_20_words, thumbnail_path, original_slide_position, slide_file_path)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 summary_10_20_words, thumbnail_path, original_slide_position, 
+                 slide_file_path, slide_pdf_path, requires_pdf, complexity_score)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING slide_id
                 """,
-                (slide_id, deck_id, slide_index, title_header, plain_text,
-                 summary, thumbnail_path, original_slide_position, slide_file_path)
+                (
+                    slide_id,
+                    deck_id,
+                    slide_index,
+                    title_header,
+                    plain_text,
+                    summary,
+                    thumbnail_path,
+                    original_slide_position,
+                    slide_file_path,
+                    slide_pdf_path,
+                    requires_pdf,
+                    complexity_score,
+                ),
             )
             
             result = cur.fetchone()

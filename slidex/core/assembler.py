@@ -24,24 +24,20 @@ class SlideAssembler:
     def assemble(
         slide_ids: List[str],
         output_filename: Optional[str] = None,
-        preserve_order: bool = False
+        preserve_order: bool = False,
     ) -> Path:
-        """
-        Assemble slides into a new presentation.
-        
+        """Assemble slides into a new PowerPoint presentation.
+
         Args:
             slide_ids: List of slide IDs to include
             output_filename: Optional output filename (generated if not provided)
-            preserve_order: If True, preserve the order of slide_ids; 
-                          otherwise order by original deck order
-            
-        Returns:
-            Path to the generated presentation file
+            preserve_order: If True, preserve the order of slide_ids;
+                            otherwise order by original deck order
         """
         if not slide_ids:
             raise ValueError("No slides provided for assembly")
-        
-        logger.info(f"Assembling presentation with {len(slide_ids)} slides")
+
+        logger.info(f"Assembling presentation with {len(slide_ids)} slides (PPTX)")
         
         # Fetch slide metadata
         slides_data = []

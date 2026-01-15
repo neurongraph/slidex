@@ -195,9 +195,14 @@ def api_slide_preview(slide_id: str):
 
 @app.route('/api/assemble', methods=['POST'])
 def api_assemble():
-    """
-    Assemble slides into a new presentation.
-    Body: { "slide_ids": ["id1", "id2"], "output_filename": "optional.pptx" }
+    """Assemble slides into a new presentation.
+
+    The API now always produces **both** PPTX and PDF outputs for simplicity.
+    Body: {
+        "slide_ids": ["id1", "id2"],
+        "output_filename": "optional.pptx",
+        "preserve_order": true
+    }
     """
     try:
         data = request.get_json()
@@ -211,23 +216,30 @@ def api_assemble():
         
         if not isinstance(slide_ids, list) or not slide_ids:
             return jsonify({'error': 'slide_ids must be a non-empty list'}), 400
-        
-        logger.info(f"API: Assembling {len(slide_ids)} slides")
-        
-        output_path = slide_assembler.assemble(
+
+        logger.info(f"API: Assembling {len(slide_ids)} slides into PPTX and PDF")
+
+        # First assemble PPTX
+        pptx_path = slide_assembler.assemble(
             slide_ids,
             output_filename=output_filename,
-            preserve_order=preserve_order
+            preserve_order=preserve_order,
         )
-        
-        # Generate download URL
-        download_url = f'/api/download/{output_path.name}'
+
+        # Then assemble PDF using per-slide PDFs
+        from slidex.core.pdf_assembler import pdf_assembler
+        pdf_path = pdf_assembler.assemble(
+            slide_ids,
+            preserve_order=preserve_order,
+        )
         
         return jsonify({
             'success': True,
-            'output_file': str(output_path),
-            'download_url': download_url,
-            'slide_count': len(slide_ids)
+            'pptx_file': str(pptx_path),
+            'pptx_download_url': f'/api/download/{pptx_path.name}',
+            'pdf_file': str(pdf_path),
+            'pdf_download_url': f'/api/download/{pdf_path.name}',
+            'slide_count': len(slide_ids),
         })
     
     except Exception as e:
@@ -244,14 +256,22 @@ def api_download(filename: str):
         if not file_path.is_absolute():
             file_path = Path.cwd() / file_path
         file_path = file_path / filename
-        
+
         if not file_path.exists():
             return jsonify({'error': 'File not found'}), 404
+
+        # Infer content type from optional query param
+        fmt = request.args.get('format', '').lower()
+        if fmt == 'pdf' or filename.lower().endswith('.pdf'):
+            mimetype = 'application/pdf'
+        else:
+            mimetype = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
         
         return send_file(
             file_path,
             as_attachment=True,
-            download_name=filename
+            download_name=filename,
+            mimetype=mimetype,
         )
     
     except Exception as e:

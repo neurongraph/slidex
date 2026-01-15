@@ -7,7 +7,9 @@ import subprocess
 import shutil
 from pathlib import Path
 from typing import Optional
-from pypdf import PdfReader, PdfWriter
+
+from PIL import Image
+import fitz  # PyMuPDF for all PDF operations (read/write/render)
 
 from slidex.config import settings
 from slidex.logging_config import logger
@@ -144,22 +146,25 @@ class PDFProcessor:
         """
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Read the source PDF
-            reader = PdfReader(str(pdf_path))
-            
-            if page_index >= len(reader.pages) or page_index < 0:
-                logger.error(f"Page index {page_index} out of range (total pages: {len(reader.pages)})")
+
+            if not pdf_path.exists():
+                logger.error(f"Source PDF not found for extraction: {pdf_path}")
                 return False
-            
-            # Create a new PDF with just the specified page
-            writer = PdfWriter()
-            writer.add_page(reader.pages[page_index])
-            
-            # Write the output
-            with open(output_path, 'wb') as output_file:
-                writer.write(output_file)
-            
+
+            # Open source PDF and create a new single-page document
+            src_doc = fitz.open(str(pdf_path))
+            if page_index < 0 or page_index >= src_doc.page_count:
+                logger.error(
+                    f"Page index {page_index} out of range (total pages: {src_doc.page_count})"
+                )
+                return False
+
+            out_doc = fitz.open()
+            out_doc.insert_pdf(src_doc, from_page=page_index, to_page=page_index)
+            out_doc.save(str(output_path))
+            out_doc.close()
+            src_doc.close()
+
             logger.debug(f"Extracted page {page_index} to: {output_path}")
             return True
             
@@ -167,6 +172,46 @@ class PDFProcessor:
             logger.error(f"Error extracting PDF page {page_index}: {e}")
             return False
     
+    @staticmethod
+    def render_page_to_image(
+        pdf_path: Path,
+        page_index: int,
+        width: int,
+    ) -> Optional[Image.Image]:
+        """Render a single PDF page to a Pillow image.
+
+        Args:
+            pdf_path: Path to the PDF file
+            page_index: 0-based page index
+            width: target width in pixels (height scaled proportionally)
+
+        Returns:
+            Pillow Image instance, or None on failure
+        """
+        try:
+            if not pdf_path.exists():
+                logger.error(f"PDF not found for thumbnail rendering: {pdf_path}")
+                return None
+
+            doc = fitz.open(str(pdf_path))
+            if page_index < 0 or page_index >= doc.page_count:
+                logger.error(
+                    f"Thumbnail page index {page_index} out of range (pages: {doc.page_count})"
+                )
+                return None
+
+            page = doc.load_page(page_index)
+            # Compute zoom so that resulting image has roughly the requested width
+            zoom = width / page.rect.width if page.rect.width else 1.0
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            return img
+        except Exception as e:  # pragma: no cover - defensive
+            logger.error(f"Error rendering PDF page {page_index} to image: {e}")
+            return None
+
     @staticmethod
     def get_pdf_page_count(pdf_path: Path) -> int:
         """
@@ -179,8 +224,12 @@ class PDFProcessor:
             Number of pages, or 0 if error
         """
         try:
-            reader = PdfReader(str(pdf_path))
-            return len(reader.pages)
+            if not pdf_path.exists():
+                return 0
+            doc = fitz.open(str(pdf_path))
+            count = doc.page_count
+            doc.close()
+            return count
         except Exception as e:
             logger.error(f"Error reading PDF page count: {e}")
             return 0

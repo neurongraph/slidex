@@ -16,6 +16,7 @@ from slidex.core.ollama_client import ollama_client
 from slidex.core.slide_processor import slide_processor
 from slidex.core.vector_index import vector_index
 from slidex.core.lightrag_client import lightrag_client
+from slidex.core.pdf_processor import pdf_processor
 
 
 class IngestEngine:
@@ -85,6 +86,16 @@ class IngestEngine:
         
         slide_count = len(presentation.slides)
         logger.info(f"Loaded presentation: {slide_count} slides")
+
+        # Convert whole deck to PDF once (if enabled) so we can reuse it for
+        # thumbnails and per-slide PDFs.
+        deck_pdf_path = None
+        if settings.pdf_conversion_enabled:
+            try:
+                deck_pdf_path = pdf_processor.convert_pptx_to_pdf(file_path)
+            except Exception as e:  # pragma: no cover - defensive
+                logger.error(f"Deck-level PDF conversion failed: {e}")
+                deck_pdf_path = None
         
         # Insert deck record
         deck_id = db.insert_deck(
@@ -97,6 +108,9 @@ class IngestEngine:
         
         # Collect slide data for batch insertion into LightRAG
         lightrag_documents = []
+
+        # Collect slide metadata for PDF extraction and DB insert
+        slide_data_for_pdf = []
         
         # Process each slide
         for slide_idx, slide in enumerate(presentation.slides):
@@ -131,7 +145,8 @@ class IngestEngine:
                 presentation,
                 slide_idx,
                 thumbnail_path,
-                width=settings.thumbnail_width
+                width=settings.thumbnail_width,
+                deck_pdf_path=deck_pdf_path,
             )
             
             # Generate summary
@@ -154,6 +169,11 @@ class IngestEngine:
                 logger.error(f"Error generating summary for slide {slide_idx}: {e}")
                 summary = plain_text[:100]  # Fallback to truncated text
             
+            # Complexity and PDF preference are no longer used for control flow.
+            # Keep default values for backward-compatible schema.
+            complexity_score = 0
+            requires_pdf = False
+
             # Prepare embedding input
             embedding_input = f"{title_header or ''}\n{plain_text}\n{summary}"
             
@@ -190,17 +210,22 @@ class IngestEngine:
             except ValueError:
                 slide_file_path_str = str(slide_file_path.resolve())
             
-            # Insert slide record with pre-generated slide_id
-            db.insert_slide_with_id(
-                slide_id=slide_id,
-                deck_id=deck_id,
-                slide_index=slide_idx,
-                title_header=title_header,
-                plain_text=plain_text,
-                summary=summary,
-                thumbnail_path=thumbnail_path_str,
-                original_slide_position=slide_idx,
-                slide_file_path=slide_file_path_str,
+            # Record slide data for later DB insert after optional PDF extraction
+            slide_data_for_pdf.append(
+                {
+                    "slide_id": slide_id,
+                    "deck_id": deck_id,
+                    "slide_index": slide_idx,
+                    "title_header": title_header,
+                    "plain_text": plain_text,
+                    "summary": summary,
+                    "thumbnail_path": thumbnail_path_str,
+                    "original_slide_position": slide_idx,
+                    "slide_file_path": slide_file_path_str,
+                    "complexity_score": complexity_score,
+                    "requires_pdf": requires_pdf,
+                    "vector_id": vector_id,
+                }
             )
             
             # Insert FAISS mapping (only if not using LightRAG)
@@ -222,6 +247,45 @@ class IngestEngine:
             
             logger.debug(f"Slide {slide_idx + 1} processed successfully")
         
+        # Convert entire deck to PDF and extract per-slide PDFs
+        pdf_path = deck_pdf_path
+        if settings.pdf_conversion_enabled and slide_data_for_pdf and pdf_path:
+            try:
+                    for data in slide_data_for_pdf:
+                        slide_id = data["slide_id"]
+                        slide_idx = data["slide_index"]
+
+                        pdf_output_path = settings.slides_pdf_dir / f"{slide_id}.pdf"
+                        success = pdf_processor.extract_pdf_page(
+                            pdf_path, slide_idx, pdf_output_path
+                        )
+
+                        if success:
+                            data["slide_pdf_path"] = str(pdf_output_path)
+            except Exception as e:
+                logger.error(f"PDF conversion failed: {e}")
+
+        # Insert slide rows now that we have optional PDF paths
+        for data in slide_data_for_pdf:
+            db.insert_slide_with_id(
+                slide_id=data["slide_id"],
+                deck_id=data["deck_id"],
+                slide_index=data["slide_index"],
+                title_header=data["title_header"],
+                plain_text=data["plain_text"],
+                summary=data["summary"],
+                thumbnail_path=data["thumbnail_path"],
+                original_slide_position=data["original_slide_position"],
+                slide_file_path=data["slide_file_path"],
+                slide_pdf_path=data.get("slide_pdf_path"),
+                requires_pdf=data["requires_pdf"],
+                complexity_score=data["complexity_score"],
+            )
+
+            # Insert FAISS mapping (only if not using LightRAG)
+            if not settings.lightrag_enabled:
+                db.insert_faiss_mapping(data["slide_id"], data["vector_id"])
+
         # Insert all slides into LightRAG in batch
         if settings.lightrag_enabled and lightrag_documents:
             try:
