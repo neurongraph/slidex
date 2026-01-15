@@ -59,8 +59,10 @@ END;
 $$ language 'plpgsql';
 
 -- Triggers to auto-update updated_at
+DROP TRIGGER IF EXISTS update_decks_updated_at ON decks;
 CREATE TRIGGER update_decks_updated_at BEFORE UPDATE ON decks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_slides_updated_at ON slides;
 CREATE TRIGGER update_slides_updated_at BEFORE UPDATE ON slides
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
