@@ -67,6 +67,28 @@ class Settings(BaseSettings):
         description="Context size for LightRAG LLM (minimum 32k recommended)"
     )
     
+    # PDF configuration
+    pdf_conversion_enabled: bool = Field(
+        default=True,
+        description="Enable PDF conversion for complex slides"
+    )
+    libreoffice_path: str = Field(
+        default="/Applications/LibreOffice.app/Contents/MacOS/soffice",
+        description="Path to LibreOffice executable for PDF conversion"
+    )
+    pdf_dpi: int = Field(
+        default=150,
+        description="DPI for PDF rendering (higher = better quality, larger file)"
+    )
+    complexity_threshold_for_pdf: int = Field(
+        default=10,
+        description="Complexity score threshold for requiring PDF format"
+    )
+    prefer_pdf_for_smartart: bool = Field(
+        default=True,
+        description="Automatically use PDF format for slides with SmartArt"
+    )
+    
     # Processing configuration
     batch_size: int = Field(default=10, description="Batch size for processing")
     thumbnail_width: int = Field(default=320, description="Thumbnail width in pixels")
@@ -92,8 +114,13 @@ class Settings(BaseSettings):
     
     @property
     def slides_dir(self) -> Path:
-        """Individual slides storage directory."""
+        """Individual slides storage directory (PPTX)."""
         return self.storage_root / "slides"
+    
+    @property
+    def slides_pdf_dir(self) -> Path:
+        """Individual slides PDF storage directory."""
+        return self.storage_root / "slides_pdf"
     
     @property
     def exports_dir(self) -> Path:
@@ -105,6 +132,8 @@ class Settings(BaseSettings):
         self.storage_root.mkdir(parents=True, exist_ok=True)
         self.thumbnails_dir.mkdir(parents=True, exist_ok=True)
         self.slides_dir.mkdir(parents=True, exist_ok=True)
+        if self.pdf_conversion_enabled:
+            self.slides_pdf_dir.mkdir(parents=True, exist_ok=True)
         self.exports_dir.mkdir(parents=True, exist_ok=True)
         self.faiss_index_path.parent.mkdir(parents=True, exist_ok=True)
         self.audit_db_path.parent.mkdir(parents=True, exist_ok=True)
