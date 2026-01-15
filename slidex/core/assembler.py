@@ -7,6 +7,7 @@ from typing import List, Optional
 from datetime import datetime
 from pptx import Presentation
 from pptx.parts.image import Image, ImagePart
+from pptx.opc.package import Part
 from copy import deepcopy
 from pptx.oxml.ns import qn
 import io
@@ -181,71 +182,154 @@ class SlideAssembler:
             except Exception as e:
                 logger.debug(f"Could not copy shape {getattr(shape, 'name', '')}: {e}")
 
-        # Copy image and media relationships by duplicating the target part when possible
-        # Map old rIds -> new rIds so we can remap r:embed attributes in the copied XML
+        # Copy all relationships including images, media, and embedded objects (OLE, charts, etc.)
+        # Map old rIds -> new rIds so we can remap r:embed and r:id attributes in the copied XML
         old_to_new = {}
         try:
             for rId, rel in list(source_slide.part.rels.items()):
                 try:
-                    if 'image' in rel.reltype or 'media' in rel.reltype:
-                        related_part = rel.target_part
-
-                        new_part = None
-                        # Attempt to duplicate the binary part into the target package
+                    related_part = rel.target_part
+                    new_part = None
+                    
+                    # Handle different relationship types
+                    reltype_lower = rel.reltype.lower()
+                    
+                    # Skip internal PPTX structure relationships (layouts, masters, themes)
+                    # These should not be copied - they belong to the presentation template
+                    skip_reltypes = ['slidelayout', 'slidemaster', 'theme', 'notesmaster', 'notesslide', 'handoutmaster']
+                    if any(skip in reltype_lower for skip in skip_reltypes):
+                        logger.debug(f"Skipping internal relationship: {rel.reltype}")
+                        continue
+                    
+                    if 'image' in reltype_lower:
+                        # Handle images
                         try:
                             blob = getattr(related_part, 'blob', None)
                             content_type = getattr(related_part, 'content_type', None)
                             target_pkg = target_presentation.part.package
 
                             if blob is not None and content_type:
-                                # Always create a new part (no deduplication)
-                                # This prevents "Duplicate name" warnings and potential corruption
                                 try:
-                                    # Increment counter
                                     image_counter['count'] += 1
-                                    
-                                    # Create Image object and new ImagePart
                                     image = Image.from_blob(blob)
                                     new_part = ImagePart.new(target_pkg, image)
-                                    
-                                    # The ImagePart.new() creates part with auto-generated name
-                                    # which may still collide. Force-add to package to ensure uniqueness
-                                    # by manipulating the internal partname if needed
-                                    
                                 except Exception as e:
                                     logger.debug(f"Could not create image part: {e}")
                                     new_part = None
                         except Exception as e:
-                            logger.debug(f"Could not duplicate related part blob: {e}")
-
+                            logger.debug(f"Could not duplicate image: {e}")
+                    
+                    elif 'oleobject' in reltype_lower or 'package' in reltype_lower or 'embeddings' in reltype_lower:
+                        # Handle OLE objects, embedded packages, and smart objects
+                        # These need special handling - copy the blob as-is
                         try:
-                            if new_part is not None:
-                                new_rel = new_slide.part.relate_to(new_part, rel.reltype)
-                            else:
-                                # Last-resort: relate to original part (works but is less portable)
-                                new_rel = new_slide.part.relate_to(related_part, rel.reltype)
-
-                            old_to_new[rId] = getattr(new_rel, 'rId', None)
+                            blob = getattr(related_part, 'blob', None)
+                            if blob is not None:
+                                # Create a new part in the target package with the same content type
+                                content_type = getattr(related_part, 'content_type', 'application/vnd.openxmlformats-officedocument.oleObject')
+                                
+                                # Generate unique part name
+                                image_counter['count'] += 1
+                                ext = 'bin'  # default extension
+                                if hasattr(related_part, 'partname'):
+                                    original_ext = str(related_part.partname).split('.')[-1]
+                                    if original_ext:
+                                        ext = original_ext
+                                
+                                unique_partname = f'/ppt/embeddings/oleObject{image_counter["count"]}.{ext}'
+                                
+                                # Add part directly to package
+                                new_part = Part(unique_partname, content_type, blob, target_presentation.part.package)
+                                target_presentation.part.package._parts[unique_partname] = new_part
+                                
+                                logger.debug(f"Copied OLE/embedded object: {unique_partname}")
                         except Exception as e:
-                            logger.debug(f"Could not create relationship on new slide: {e}")
+                            logger.debug(f"Could not copy OLE object: {e}")
+                    
+                    elif 'media' in reltype_lower or 'video' in reltype_lower or 'audio' in reltype_lower:
+                        # Handle media files (video, audio)
+                        try:
+                            blob = getattr(related_part, 'blob', None)
+                            if blob is not None:
+                                content_type = getattr(related_part, 'content_type', 'application/octet-stream')
+                                image_counter['count'] += 1
+                                
+                                # Determine extension
+                                ext = 'bin'
+                                if hasattr(related_part, 'partname'):
+                                    original_ext = str(related_part.partname).split('.')[-1]
+                                    if original_ext:
+                                        ext = original_ext
+                                
+                                unique_partname = f'/ppt/media/media{image_counter["count"]}.{ext}'
+                                
+                                new_part = Part(unique_partname, content_type, blob, target_presentation.part.package)
+                                target_presentation.part.package._parts[unique_partname] = new_part
+                                
+                                logger.debug(f"Copied media: {unique_partname}")
+                        except Exception as e:
+                            logger.debug(f"Could not copy media: {e}")
+                    
+                    else:
+                        # For other relationship types (charts, hyperlinks, etc.), try generic copy
+                        try:
+                            blob = getattr(related_part, 'blob', None)
+                            if blob is not None:
+                                content_type = getattr(related_part, 'content_type', 'application/octet-stream')
+                                image_counter['count'] += 1
+                                
+                                ext = 'bin'
+                                if hasattr(related_part, 'partname'):
+                                    original_ext = str(related_part.partname).split('.')[-1]
+                                    if original_ext:
+                                        ext = original_ext
+                                
+                                unique_partname = f'/ppt/other/object{image_counter["count"]}.{ext}'
+                                
+                                new_part = Part(unique_partname, content_type, blob, target_presentation.part.package)
+                                target_presentation.part.package._parts[unique_partname] = new_part
+                                
+                                logger.debug(f"Copied other relationship type {rel.reltype}: {unique_partname}")
+                        except Exception as e:
+                            logger.debug(f"Could not copy relationship {rel.reltype}: {e}")
+
+                    # Create relationship to the new part (or fallback to original)
+                    try:
+                        if new_part is not None:
+                            new_rel = new_slide.part.relate_to(new_part, rel.reltype)
+                        else:
+                            # Last-resort: relate to original part
+                            new_rel = new_slide.part.relate_to(related_part, rel.reltype)
+
+                        old_to_new[rId] = getattr(new_rel, 'rId', None)
+                    except Exception as e:
+                        logger.debug(f"Could not create relationship on new slide: {e}")
+                        
                 except Exception as e:
                     logger.debug(f"Skipping relationship {rId}: {e}")
         except Exception as e:
             logger.debug(f"Error copying slide relationships: {e}")
 
-        # Remap r:embed references inside the newly inserted XML elements
+        # Remap r:embed and r:id references inside the newly inserted XML elements
         if old_to_new:
             try:
                 for newel in new_elements:
                     for node in newel.iter():
-                        # look for r:embed attributes (e.g. in a:blip)
+                        # Remap r:embed attributes (e.g. in a:blip for images)
                         embed_val = node.get(qn('r:embed'))
                         if embed_val and embed_val in old_to_new:
                             new_rid = old_to_new.get(embed_val)
                             if new_rid:
                                 node.set(qn('r:embed'), new_rid)
+                        
+                        # Remap r:id attributes (e.g. in oleObject, media references)
+                        id_val = node.get(qn('r:id'))
+                        if id_val and id_val in old_to_new:
+                            new_rid = old_to_new.get(id_val)
+                            if new_rid:
+                                node.set(qn('r:id'), new_rid)
             except Exception as e:
-                logger.debug(f"Error remapping r:embed attributes: {e}")
+                logger.debug(f"Error remapping relationship attributes: {e}")
     
 
 
