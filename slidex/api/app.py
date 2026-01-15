@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify, render_template, send_file, send_from
 from pathlib import Path
 from typing import Optional
 import json
+import traceback
 
 from slidex.config import settings
 from slidex.logging_config import logger
@@ -163,7 +164,15 @@ def api_search():
         
         logger.info(f"API: Searching for '{query}' (top_k={top_k}, mode={mode})")
         
-        results = search_engine.search(query, top_k=top_k, mode=mode)
+        try:
+            results = search_engine.search(query, top_k=top_k, mode=mode)
+        except Exception as e:
+            logger.error(f"Error in API search: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            }), 500
 
         # Extract LightRAG's natural language answer if present (stored on the
         # first result in LightRAG mode).

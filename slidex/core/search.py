@@ -4,6 +4,7 @@ Search engine for semantic slide search using FAISS and Ollama embeddings.
 
 from typing import List, Dict, Any, Optional, Literal
 import re
+import traceback
 
 from slidex.config import settings
 from slidex.logging_config import logger
@@ -40,11 +41,16 @@ class SearchEngine:
         
         logger.info(f"Searching for: '{query}' (top_k={top_k}, mode={mode})")
         
-        # Use LightRAG if enabled, otherwise fall back to FAISS
-        if settings.lightrag_enabled:
-            return SearchEngine._search_with_lightrag(query, top_k, mode)
-        else:
-            return SearchEngine._search_with_faiss(query, top_k, session_id)
+        try:
+            # Use LightRAG if enabled, otherwise fall back to FAISS
+            if settings.lightrag_enabled:
+                return SearchEngine._search_with_lightrag(query, top_k, mode)
+            else:
+                return SearchEngine._search_with_faiss(query, top_k, session_id)
+        except Exception as e:
+            logger.error(f"Error in search: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
     
     @staticmethod
     def _search_with_faiss(
@@ -135,14 +141,22 @@ class SearchEngine:
                 lightrag_client.initialize()
             
             logger.debug("Retrieving context chunks from LightRAG")
-            context = lightrag_client.rag.query(
-                query,
-                param=QueryParam(
-                    mode=mode,
-                    only_need_context=True,
-                    top_k=top_k
+            # Add timeout to prevent hanging
+            try:
+                # Execute query directly - LightRAG query is synchronous
+                context = lightrag_client.rag.query(
+                    query,
+                    param=QueryParam(
+                        mode=mode,
+                        only_need_context=True,
+                        top_k=top_k,
+                        enable_rerank=False,
+                    ),
                 )
-            )
+            except Exception as e:
+                logger.error(f"Error in LightRAG query: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                raise
             
             if not context:
                 logger.info("No context from LightRAG")

@@ -67,6 +67,20 @@ class Settings(BaseSettings):
         description="Context size for LightRAG LLM (minimum 32k recommended)"
     )
     
+    # vLLM Reranker configuration
+    vllm_reranker_enabled: bool = Field(
+        default=True,
+        description="Enable vLLM-based reranker for LightRAG"
+    )
+    vllm_reranker_url: str = Field(
+        default="ttp://localhost:8182/v1/rerank",
+        description="vLLM reranker service URL"
+    )
+    vllm_reranker_model: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        description="vLLM reranker model name"
+    )
+    
     # PDF configuration
     pdf_conversion_enabled: bool = Field(
         default=True,

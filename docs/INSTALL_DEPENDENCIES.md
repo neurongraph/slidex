@@ -78,24 +78,23 @@ psql postgres -c "CREATE DATABASE slidex;"
 
 ## Install Ollama
 
-Slidex uses Ollama for local LLM models.
+Ollama is required for local LLM operations.
 
 ```bash
 # Install Ollama
 brew install ollama
 
 # Start Ollama service
-ollama serve
-```
-
-Keep this running in a terminal, or start it in the background:
-
-```bash
-# Background service (macOS)
 brew services start ollama
 ```
 
-### Download Required Models
+## Install LibreOffice (Optional but Recommended)
+
+For full PDF processing capabilities, install LibreOffice:
+
+```bash
+brew install libreoffice
+```
 
 Once Ollama is running:
 

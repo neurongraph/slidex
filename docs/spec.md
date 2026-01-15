@@ -28,7 +28,7 @@
 - **Local models:** Ollama (already installed) to host local embedding and LLM models for RAG (embedding + optional summarization).
 - **Vector DB:** FAISS (local), persisted to disk; chosen for ease of local embedding and zero external dependencies.
 - **Metadata DB:** PostgreSQL (user already has installed) — store slide and deck metadata, references to thumbnails and original file paths.
-- **Slide processing:** `python-pptx` + `Pillow` (for thumbnail generation). Optionally `libreoffice --headless` can be used for higher-fidelity images but is optional.
+- **Slide processing:** `python-pptx` + `Pillow` (for thumbnail generation). Optionally `libreoffice --headless` can be used for higher-fidelity images and PDF conversion.
 
 ---
 
@@ -179,6 +179,43 @@ Provide a `scripts/setup_dev.sh` to create virtualenv, install via Poetry, initi
 5. Implement search API/CLI and preview UI.  
 6. Implement assemble/export.  
 7. Polish UX and provide setup script and README for dev usage.
+
+---
+
+## 12. PDF Processing
+
+Slidex includes optional PDF processing capabilities to enhance visual fidelity:
+
+- **Full Deck Conversion**: PowerPoint presentations are converted to PDF using LibreOffice for consistent visual rendering
+- **Individual Slide Extraction**: Each slide is extracted as a separate PDF page for thumbnail generation and search
+- **Dual Format Assembly**: Assembled presentations can be created as both PPTX and PDF files
+- **Visual Fidelity**: Complex slide elements like SmartArt diagrams and charts are preserved in PDF format
+
+PDF processing is optional and requires LibreOffice to be installed on the system. When disabled, core functionality remains intact but visual fidelity may be reduced for complex slides.
+
+---
+
+## 4. Search & Retrieval
+
+Slidex supports semantic search using two different approaches:
+
+1. **FAISS-based search** - Uses local FAISS vector index with Ollama embeddings for fast retrieval
+2. **LightRAG-based search** - Uses a knowledge graph built from slides with semantic search capabilities
+
+### LightRAG Configuration
+
+LightRAG is enabled by default and provides enhanced semantic search capabilities. It builds a knowledge graph from the slide content and can provide more context-aware search results.
+
+### vLLM Reranker Integration
+
+Slidex supports integration with vLLM-based rerankers for enhanced search results. When enabled, LightRAG will use the vLLM reranker to re-rank search results before returning them to the user.
+
+To enable vLLM reranker:
+1. Set `VLLM_RERANKER_ENABLED=true` in your configuration
+2. Ensure your vLLM service is running on port 8182 with the `bge-reranker-v2-m3` model
+3. The system will automatically use the reranker for LightRAG queries
+
+This feature enhances the quality of search results by providing more accurate relevance scoring for retrieved documents.
 
 ---
 

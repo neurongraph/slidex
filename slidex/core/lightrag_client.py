@@ -5,6 +5,7 @@ Integrates LightRAG with Ollama models and audit logging.
 
 import asyncio
 import time
+import traceback
 from typing import List, Optional, Dict, Any, Literal
 import numpy as np
 
@@ -12,6 +13,7 @@ from lightrag import LightRAG, QueryParam
 from lightrag.llm.ollama import ollama_model_complete, ollama_embed
 from lightrag.utils import wrap_embedding_func_with_attrs
 from lightrag.kg.shared_storage import initialize_pipeline_status
+from lightrag.rerank import generic_rerank_api
 
 from slidex.config import settings
 from slidex.logging_config import logger
@@ -128,13 +130,46 @@ class LightRAGClient:
                 )
                 raise
         
+        # Initialize LightRAG with optional vLLM reranker
+        lightRAG_kwargs = {
+            "working_dir": str(settings.lightrag_working_dir),
+            "llm_model_func": llm_model_func_with_audit,
+            "llm_model_name": settings.ollama_summary_model,
+            "embedding_func": embedding_func_with_audit,
+        }
+        
+        # Add vLLM reranker if enabled
+        if settings.vllm_reranker_enabled:
+            logger.info("Enabling vLLM-based reranker for LightRAG")
+            
+            async def vllm_rerank_func(
+                query: str,
+                documents: List[str],
+                top_n: Optional[int] = None
+            ) -> List[Dict[str, Any]]:
+                """vLLM reranker function for LightRAG."""
+                try:
+                    # Call vLLM reranker API
+                    results = await generic_rerank_api(
+                        query=query,
+                        documents=documents,
+                        model=settings.vllm_reranker_model,
+                        base_url=settings.vllm_reranker_url,
+                        api_key=None,  # vLLM typically doesn't require API key
+                        top_n=top_n,
+                        response_format="standard"
+                    )
+                    return results
+                except Exception as e:
+                    logger.error(f"Error in vLLM reranker: {e}")
+                    # Return default ranking if reranker fails
+                    return [{"index": i, "relevance_score": 1.0 / (i + 1)} for i in range(len(documents))]
+            
+            # LightRAG currently expects `rerank_model_func` as the keyword
+            lightRAG_kwargs["rerank_model_func"] = vllm_rerank_func
+        
         # Initialize LightRAG
-        self.rag = LightRAG(
-            working_dir=str(settings.lightrag_working_dir),
-            llm_model_func=llm_model_func_with_audit,
-            llm_model_name=settings.ollama_summary_model,
-            embedding_func=embedding_func_with_audit,
-        )
+        self.rag = LightRAG(**lightRAG_kwargs)
         
         # Initialize storages
         await self.rag.initialize_storages()
@@ -148,7 +183,18 @@ class LightRAGClient:
     def initialize(self) -> None:
         """Synchronous wrapper for initialization."""
         if not self._initialized:
-            asyncio.run(self._initialize_async())
+            # Add timeout to prevent hanging during initialization
+            try:
+                import asyncio
+                # Run with timeout to prevent hanging
+                asyncio.run(asyncio.wait_for(self._initialize_async(), timeout=60.0))
+            except asyncio.TimeoutError:
+                logger.error("LightRAG initialization timed out")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to initialize LightRAG: {e}")
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                raise
     
     def insert_document(
         self,
@@ -260,7 +306,7 @@ class LightRAGClient:
                 top_k=top_k if top_k else 40
             )
             
-            # Execute query
+            # Execute query - LightRAG query is synchronous
             result = self.rag.query(query_text, param=query_param)
             
             # LightRAG may return enhanced response with references
@@ -275,6 +321,7 @@ class LightRAGClient:
             
         except Exception as e:
             logger.error(f"Error querying LightRAG: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
     def get_stats(self) -> Dict[str, Any]:
@@ -296,7 +343,13 @@ class LightRAGClient:
                 "initialized": self._initialized,
                 "embedding_model": settings.ollama_embedding_model,
                 "llm_model": settings.ollama_summary_model,
+                "lightrag_enabled": settings.lightrag_enabled,
+                "vllm_reranker_enabled": settings.vllm_reranker_enabled,
             }
+
+            if settings.vllm_reranker_enabled:
+                stats["vllm_reranker_url"] = settings.vllm_reranker_url
+                stats["vllm_reranker_model"] = settings.vllm_reranker_model
             
             # Try to get storage info if available
             if working_dir.exists():

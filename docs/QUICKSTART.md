@@ -8,6 +8,7 @@ Before starting, make sure you have:
 - Python 3.12+
 - PostgreSQL installed and running
 - Ollama installed
+- LibreOffice (for full PDF processing capabilities, optional but recommended)
 
 ## Step 1: Install and Setup
 
@@ -24,6 +25,11 @@ This will:
 - Create .env configuration file
 - Initialize the database
 - Create necessary directories
+
+**Note**: For full PDF processing capabilities, install LibreOffice:
+```bash
+brew install libreoffice
+```
 
 ## Step 2: Start Ollama and Pull Models
 
@@ -45,13 +51,23 @@ ollama pull nomic-embed-text
 ollama pull granite4:tiny-h
 ```
 
-## Step 3: Activate Environment
+## Step 3: Configure vLLM Reranker (Optional)
+
+If you want to use vLLM-based reranking for enhanced search results:
+
+1. Start your vLLM service with the `bge-reranker-v2-m3` model on port 8182
+2. Update your `.env` file to enable the reranker:
+   ```
+   VLLM_RERANKER_ENABLED=true
+   ```
+
+## Step 4: Activate Environment
 
 ```bash
 source .venv/bin/activate
 ```
 
-## Step 4: Choose Your Interface
+## Step 5: Choose Your Interface
 
 ### Option A: Web Interface
 
@@ -81,6 +97,31 @@ slidex search "machine learning"
 slidex assemble --slide-ids "uuid1,uuid2" --output "new_deck.pptx"
 ```
 
+## Step 6: Ingest Data
+
+To ingest a single PowerPoint file:
+```bash
+just ingest-file path/to/your/presentation.pptx
+```
+
+To ingest all PowerPoint files in a folder recursively:
+```bash
+just ingest-folder path/to/your/presentation/folder
+```
+
+## Step 7: Search and Preview
+
+Start the web UI:
+```bash
+just run
+```
+
+Visit `http://localhost:5000` to search and preview slides.
+
+## Step 8: Assemble Selected Slides
+
+Select slides from the search results and click "Assemble" to create a new PowerPoint presentation.
+
 ## Example Workflow
 
 Here's a complete example workflow:
@@ -97,63 +138,10 @@ slidex assemble \
   --slide-ids "abc123,def456,ghi789" \
   --output "data_viz_compilation.pptx" \
   --preserve-order
+```
 
 # 4. Your new presentation is in storage/exports/
 ls storage/exports/
-```
-
-## Web UI Workflow
-
-1. Navigate to http://localhost:5000
-2. Go to **Ingest** page for instructions on ingesting files
-3. Go to **Search** page
-4. Enter a search query (e.g., "cloud architecture")
-5. Select slides by clicking checkboxes
-6. Click "Assemble Presentation"
-7. Download your new presentation
-
-## Troubleshooting
-
-### "Database connection failed"
-```bash
-# Check PostgreSQL is running
-pg_isready
-
-# Re-initialize database
-just init-db
-```
-
-### "Ollama connection refused"
-```bash
-# Start Ollama
-ollama serve
-
-# Verify it's running
-curl http://localhost:11434/api/tags
-```
-
-### "Model not found"
-```bash
-# Pull required models
-ollama pull nomic-embed-text
-ollama pull granite4:tiny-h
-```
-
-### "Command not found: slidex"
-```bash
-# Make sure you're in the virtual environment
-source .venv/bin/activate
-
-# Reinstall
-just install
-```
-
-## What's Next?
-
-- Read the full [README.md](README.md) for detailed documentation
-- Check configuration options in `slidex/config.py`
-- View audit logs: `sqlite3 storage/audit.db "SELECT * FROM llm_audit_log LIMIT 10;"`
-- Browse ingested decks at http://localhost:5000/decks
 
 ## Common Commands
 
@@ -194,5 +182,13 @@ just clean
 # Deep clean (remove everything)
 just clean-all
 ```
+
+## Troubleshooting
+
+If you encounter issues:
+- Check that Ollama is running: `ollama serve`
+- Verify that required models are pulled: `ollama list`
+- Check the logs in `storage/logs/`
+- Run `just setup` to reinitialize the environment
 
 Happy slide management! 🎉

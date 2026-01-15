@@ -38,6 +38,15 @@ just format
 
 # Check system requirements
 just check
+
+# Check PDF processing status
+just check-pdf
+
+# Enable PDF processing
+just enable-pdf
+
+# Disable PDF processing
+just disable-pdf
 ```
 
 ### Testing

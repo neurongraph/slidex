@@ -50,6 +50,29 @@ Download required Ollama models (nomic-embed-text and granite4:tiny-h).
 just pull-models
 ```
 
+## PDF Processing
+
+### `just check-pdf`
+Check if LibreOffice is installed and PDF processing is enabled.
+
+```bash
+just check-pdf
+```
+
+### `just enable-pdf`
+Enable PDF processing features (requires LibreOffice installation).
+
+```bash
+just enable-pdf
+```
+
+### `just disable-pdf`
+Disable PDF processing features.
+
+```bash
+just disable-pdf
+```
+
 ## Running the Application
 
 ### `just run`

@@ -73,6 +73,93 @@ just pull-models
 # ollama pull granite4:tiny-h
 ```
 
+**Note**: For full PDF processing capabilities, install LibreOffice:
+```bash
+brew install libreoffice
+```
+
+**Alternative: Manual Setup**
+
+If you prefer manual setup:
+```bash
+# Create virtual environment
+python3.13 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+uv pip install -e .
+
+# Create .env file
+cat > .env << EOF
+DATABASE_URL=postgresql://localhost:5432/slidex
+OLLAMA_HOST=http://localhost
+OLLAMA_PORT=11434
+LOG_LEVEL=INFO
+EOF
+
+# Initialize database
+just init-db
+```
+
+## Configuration
+
+The application uses Pydantic settings for configuration. You can set configuration values via:
+
+1. Environment variables
+2. A `config/dev.yaml` file (see `config/dev.yaml.example`)
+3. Default values in the code
+
+### LightRAG Configuration
+
+LightRAG is enabled by default. You can disable it by setting `LIGHTRAG_ENABLED=false`.
+
+### vLLM Reranker Configuration
+
+To enable vLLM-based reranker for LightRAG:
+
+1. Set `VLLM_RERANKER_ENABLED=true`
+2. Set `VLLM_RERANKER_URL` to your vLLM service URL (default: `http://localhost:8182`)
+3. Set `VLLM_RERANKER_MODEL` to your reranker model name (default: `bge-reranker-v2-m3`)
+
+Example configuration in `.env`:
+```
+VLLM_RERANKER_ENABLED=true
+VLLM_RERANKER_URL=http://localhost:8182
+VLLM_RERANKER_MODEL=bge-reranker-v2-m3
+```
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd slidex
+```
+
+2. Run the complete setup:
+```bash
+# This will create venv, install dependencies, create .env, and init database
+just setup
+```
+
+3. Activate the virtual environment:
+```bash
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+4. Pull required Ollama models:
+```bash
+just pull-models
+# Or manually:
+# ollama pull nomic-embed-text
+# ollama pull granite4:tiny-h
+```
+
+**Note**: For full PDF processing capabilities, install LibreOffice:
+```bash
+brew install libreoffice
+```
+
 **Alternative: Manual Setup**
 
 If you prefer manual setup:
@@ -176,6 +263,8 @@ slidex assemble --slide-ids "uuid1,uuid2,uuid3" --output "my_presentation.pptx"
 # Preserve slide order as provided
 slidex assemble --slide-ids "uuid1,uuid2,uuid3" --preserve-order
 ```
+
+**Note**: Assembled presentations can be created in both PPTX and PDF formats. The system will automatically determine the appropriate format based on the output filename extension.
 
 ### Web UI
 
@@ -294,10 +383,10 @@ just init-db      # Initialize database
 just clean        # Clean generated files
 just clean-all    # Deep clean (remove venv, storage, .env)
 just logs         # View application logs
-just audit-logs     # View LLM audit logs
-just db-stats       # Show database statistics
-just lightrag-stats # Show LightRAG index statistics
-just clean-data     # Clean all data (database, FAISS, LightRAG)
+just audit-logs   # View LLM audit logs
+just db-stats     # Show database statistics
+just index-stats  # Show FAISS index statistics
+just clean-data   # Clean all data (database, FAISS, LightRAG)
 ```
 
 ### Running Tests
@@ -388,11 +477,6 @@ brew install --cask libreoffice
 ### Import errors
 - Ensure virtual environment is activated
 - Reinstall dependencies: `just install`
-
-### LightRAG errors
-- Ensure your Ollama model has 32k+ context size (see Installation section)
-- Check LightRAG storage: `just lightrag-stats`
-- Clean and re-index if needed: `just clean-data` then re-ingest slides
 
 ## License
 

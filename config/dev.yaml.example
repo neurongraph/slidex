@@ -15,6 +15,16 @@ storage_root: storage
 faiss_index_path: storage/faiss_index.bin
 audit_db_path: storage/audit.db
 
+# LightRAG configuration
+lightrag_working_dir: storage/lightrag
+lightrag_enabled: true
+lightrag_llm_context_size: 32768
+
+# vLLM Reranker configuration
+vllm_reranker_enabled: true
+vllm_reranker_url: http://localhost:8182
+vllm_reranker_model: bge-reranker-v2-m3
+
 # Processing
 batch_size: 10
 thumbnail_width: 320

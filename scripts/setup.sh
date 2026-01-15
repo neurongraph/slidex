@@ -113,6 +113,25 @@ else
     echo "   Run: ollama pull granite4:tiny-h"
 fi
 
+# Optional: check vLLM reranker if enabled in .env
+if [ -f ".env" ]; then
+    # shellcheck disable=SC1091
+    . .env
+    if [ "${VLLM_RERANKER_ENABLED}" = "true" ] || [ "${VLLM_RERANKER_ENABLED}" = "True" ]; then
+        echo "Checking vLLM reranker (VLLM_RERANKER_ENABLED=true)..."
+        RERANK_URL="${VLLM_RERANKER_URL:-http://localhost:8182/v1/rerank}"
+        RERANK_MODEL="${VLLM_RERANKER_MODEL:-bge-reranker-v2-m3}"
+        if curl -sS -X POST "$RERANK_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"'"$RERANK_MODEL"'","query":"health check","documents":["test"],"top_n":1}' \
+            > /dev/null 2>&1; then
+            echo "✓ vLLM reranker reachable at $RERANK_URL (model=$RERANK_MODEL)"
+        else
+            echo "⚠️  vLLM reranker not reachable at $RERANK_URL"
+        fi
+    fi
+fi
+
 echo ""
 echo "✅ Setup complete!"
 echo ""
