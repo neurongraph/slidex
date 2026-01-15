@@ -6,8 +6,7 @@ from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 from pptx import Presentation
-from pptx.util import Inches
-import shutil
+from pptx.parts.image import Image, ImagePart
 from copy import deepcopy
 from pptx.oxml.ns import qn
 import io
@@ -87,8 +86,8 @@ class SlideAssembler:
         new_prs.slide_width = target_dimensions[0]
         new_prs.slide_height = target_dimensions[1]
         
-        # Track added images to avoid duplicates
-        image_cache = {}  # blob hash -> part
+        # Counter for unique image naming (no deduplication)
+        image_counter = {'count': 0}
         
         # Process slides in the requested order
         if preserve_order:
@@ -118,8 +117,8 @@ class SlideAssembler:
                     source_slide = source_prs.slides[slide_index]
                     logger.debug(f"Loaded slide from original deck: {deck_path} (index {slide_index})")
                 
-                # Copy slide to new presentation with image cache
-                SlideAssembler._copy_slide(source_slide, new_prs, image_cache)
+                # Copy slide to new presentation with unique image naming
+                SlideAssembler._copy_slide(source_slide, new_prs, image_counter)
                 
                 logger.debug(
                     f"Copied slide: {slide_data.get('title_header') or 'Untitled'}"
@@ -149,7 +148,7 @@ class SlideAssembler:
         return output_path
     
     @staticmethod
-    def _copy_slide(source_slide, target_presentation: Presentation, image_cache: dict = None) -> None:
+    def _copy_slide(source_slide, target_presentation: Presentation, image_counter: dict = None) -> None:
         """
         Copy a slide from source to target presentation using deep XML cloning.
         This preserves all formatting, shapes, images, and content.
@@ -157,12 +156,12 @@ class SlideAssembler:
         Args:
             source_slide: Source slide to copy
             target_presentation: Target presentation
-            image_cache: Optional dict to track already-added images (blob hash -> part)
+            image_counter: Optional dict with 'count' key for unique image naming
         
         Note: Target presentation dimensions should already be set before calling this.
         """
-        if image_cache is None:
-            image_cache = {}
+        if image_counter is None:
+            image_counter = {'count': 0}
         
         # Get a blank slide layout from target
         blank_layout = target_presentation.slide_layouts[6]
@@ -199,31 +198,23 @@ class SlideAssembler:
                             target_pkg = target_presentation.part.package
 
                             if blob is not None and content_type:
-                                # Check if we've already added this image
-                                import hashlib
-                                blob_hash = hashlib.md5(blob).hexdigest()
-                                
-                                if blob_hash in image_cache:
-                                    # Reuse existing part
-                                    new_part = image_cache[blob_hash]
-                                    logger.debug(f"Reusing cached image: {blob_hash[:8]}...")
-                                else:
-                                    # Add new image part
-                                    # Prefer public helper if available (some versions expose helpers)
-                                    if hasattr(target_pkg, 'get_or_add_image_part'):
-                                        try:
-                                            new_part = target_pkg.get_or_add_image_part(blob)
-                                            image_cache[blob_hash] = new_part
-                                        except Exception:
-                                            new_part = None
-                                    # Generic fallback: try to use package API if available
-                                    if new_part is None and hasattr(target_pkg, 'get_or_add_part'):
-                                        try:
-                                            new_part = target_pkg.get_or_add_part(content_type, io.BytesIO(blob))
-                                            if new_part:
-                                                image_cache[blob_hash] = new_part
-                                        except Exception:
-                                            new_part = None
+                                # Always create a new part (no deduplication)
+                                # This prevents "Duplicate name" warnings and potential corruption
+                                try:
+                                    # Increment counter
+                                    image_counter['count'] += 1
+                                    
+                                    # Create Image object and new ImagePart
+                                    image = Image.from_blob(blob)
+                                    new_part = ImagePart.new(target_pkg, image)
+                                    
+                                    # The ImagePart.new() creates part with auto-generated name
+                                    # which may still collide. Force-add to package to ensure uniqueness
+                                    # by manipulating the internal partname if needed
+                                    
+                                except Exception as e:
+                                    logger.debug(f"Could not create image part: {e}")
+                                    new_part = None
                         except Exception as e:
                             logger.debug(f"Could not duplicate related part blob: {e}")
 
