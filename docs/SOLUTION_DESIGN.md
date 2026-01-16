@@ -11,7 +11,7 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   User Interface│    │   CLI Interface │    │   REST API      │
-│   (Web UI)      │    │   (Command Line)│    │   (Flask)       │
+│   (Web UI)      │    │   (Command Line)│    │   (FastAPI)     │
 └─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
           │                      │                      │
           └──────────────────────┼──────────────────────┘
@@ -54,69 +54,177 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 - **Slide Processing**: `slidex/core/slide_processor.py`
 - **Search Engine**: `slidex/core/search.py`
 - **Assembly Engine**: `slidex/core/assembler.py`
+- **PDF Assembly**: `slidex/core/pdf_assembler.py`
 - **Audit Logging**: `slidex/core/audit_logger.py`
 
 #### 4. Data Storage Layer
 - **Metadata Storage**: PostgreSQL database
-- **Vector Index**: FAISS for semantic search
+- **Vector Index**: FAISS for semantic search (legacy, when LightRAG disabled)
 - **LightRAG Storage**: Graph-based knowledge store
 - **Local Storage**: Thumbnails, exports, logs
 
 ## Key Features Implementation
 
 ### 1. Ingestion Pipeline
-- **File Discovery**: Recursively discover `.pptx` files
-- **Duplicate Detection**: SHA256 hash + file size + mtime comparison
-- **Slide Processing**: Text extraction, thumbnail generation, summary creation
-- **Embedding Generation**: Ollama-based embeddings for semantic search
-- **Metadata Persistence**: Store slide metadata in PostgreSQL
+
+**Process Flow:**
+1. **File Discovery**: Recursively discover `.pptx` files
+2. **Duplicate Detection**: SHA256 hash + file size + mtime comparison
+3. **Slide Processing**: Text extraction, thumbnail generation, summary creation
+4. **Individual Slide Files**: Each slide saved as standalone `.pptx` file
+5. **PDF Conversion**: Full deck converted to PDF (if LibreOffice available)
+6. **Embedding Generation**: Ollama-based embeddings for semantic search
+7. **LightRAG Indexing**: Content inserted into knowledge graph
+8. **Metadata Persistence**: Store slide metadata in PostgreSQL
+
+**Duplicate Avoidance:**
+- Compute deterministic fingerprint: SHA256(file bytes) + file size + mtime
+- Check `decks.file_hash` in database before ingestion
+- Skip if already ingested
+
+**Individual Slide Files:**
+- Each slide saved as `storage/slides/{slide_id}.pptx`
+- Benefits:
+  - Direct inspection in PowerPoint for debugging
+  - RAG integration with individual files
+  - No dependency on original file paths
+  - Simplified assembly process
+- Trade-offs:
+  - More disk space usage
+  - No deduplication of images across slides
 
 ### 2. Search Engine
-- **LightRAG Integration**: Graph-based retrieval with entity extraction
-- **Multiple Query Modes**: naive, local, global, and hybrid search strategies
-- **Semantic Search**: FAISS vector search combined with LightRAG graph traversal
-- **Result Presentation**: Rich metadata display with previews
+
+**LightRAG-Based Search:**
+- **Naive Mode**: Simple semantic search without graph traversal
+- **Local Mode**: Retrieves contextually related information from nearby graph nodes
+- **Global Mode**: Utilizes global knowledge across entire knowledge graph
+- **Hybrid Mode**: Combines local and global strategies (recommended)
+
+**FAISS-Based Search (Legacy):**
+- Used when LightRAG is disabled
+- Vector similarity search using FAISS IndexFlatL2
+- Converts FAISS distances to similarity scores
+
+**vLLM Reranker Integration:**
+- Optional reranking using vLLM service
+- Enhances search result quality with better relevance scoring
+- Requires separate vLLM service running with `bge-reranker-v2-m3` model
 
 ### 3. Assembly Engine
-- **Slide Selection**: Multi-select from search results
-- **Presentation Creation**: PowerPoint file assembly using python-pptx
-- **Formatting Preservation**: Best-effort preservation of original formatting
-- **Export Management**: Save assembled presentations to storage
 
-### 4. Audit System
-- **LLM Interaction Logging**: All LLM operations logged to SQLite
-- **Full Auditability**: Complete trace of all operations for compliance
-- **Debugging Support**: Detailed logs for troubleshooting
+**Process:**
+1. **Slide Selection**: Multi-select from search results
+2. **File Loading**: Load individual slide files (preferred) or extract from original decks
+3. **Presentation Creation**: Assemble using python-pptx
+4. **Formatting Preservation**: Best-effort XML deep-copying
+5. **Dual Format Export**: Save as both PPTX and PDF (if enabled)
+
+**Formatting Preservation:**
+- Uses XML deep-copying for slide shapes
+- Preserves layouts, colors, fonts where possible
+- Complex elements (SmartArt, charts) may lose some formatting
+
+### 4. PDF Processing
+
+**Full Deck to PDF:**
+- Converts entire PowerPoint to PDF using LibreOffice
+- Ensures visual consistency
+- Preserves complex slide elements
+
+**Individual Slide Extraction:**
+- Each slide extracted as separate PDF page
+- Used for thumbnail generation
+- Maintains visual fidelity
+
+**PDF Assembly:**
+- Assembled presentations can be exported as PDF
+- Uses PyMuPDF for PDF manipulation
+- Combines individual slide PDFs into single document
+
+### 5. Audit System
+
+**LLM Interaction Logging:**
+- All Ollama API calls logged to SQLite (`storage/audit.db`)
+- Tracks embeddings, summaries, entity extraction
+- Records input, output, timing, model used
+- Provides full auditability for compliance
+
+**Audit Database Schema:**
+```sql
+CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY,
+    timestamp TEXT,
+    operation TEXT,
+    model TEXT,
+    input_text TEXT,
+    output_text TEXT,
+    duration_ms REAL,
+    session_id TEXT
+);
+```
 
 ## Data Flow
 
-The core data flow in Slidex is as follows:
+### Ingestion Flow
 
-1. **Ingestion**: PowerPoint files are ingested, with each slide saved as a separate file
-2. **Text Extraction**: Slide content is extracted and processed
-3. **PDF Conversion**: Full deck is converted to PDF for visual fidelity
-4. **Individual Slide Processing**: Each slide is processed individually
-5. **Embedding Generation**: Text is converted to embeddings using Ollama
-6. **Storage**: Metadata and embeddings are stored in PostgreSQL and FAISS
-7. **Search**: Users can search using natural language queries
-8. **Assembly**: Selected slides can be assembled into new presentations (both PPTX and PDF)
+```
+PowerPoint File
+    ↓
+File Hash Check (Deduplication)
+    ↓
+Slide Extraction (python-pptx)
+    ↓
+├─→ Text Extraction
+├─→ Individual Slide File Creation
+├─→ Thumbnail Generation (LibreOffice/Pillow)
+├─→ Summary Generation (Ollama LLM)
+└─→ PDF Conversion (LibreOffice)
+    ↓
+Embedding Generation (Ollama)
+    ↓
+├─→ LightRAG Indexing (Knowledge Graph)
+└─→ FAISS Indexing (Legacy Vector Store)
+    ↓
+Metadata Storage (PostgreSQL)
+```
 
-### PDF Processing Flow
+### Search Flow
 
-The PDF processing component provides enhanced visual fidelity by implementing a multi-stage conversion process:
+```
+User Query
+    ↓
+Query Embedding (Ollama)
+    ↓
+LightRAG Search (Graph Traversal)
+    ↓
+├─→ Entity Extraction
+├─→ Relationship Discovery
+└─→ Context-Aware Retrieval
+    ↓
+Optional Reranking (vLLM)
+    ↓
+Metadata Enrichment (PostgreSQL)
+    ↓
+Results with Thumbnails & Summaries
+```
 
-1. **Full Deck to PDF**: When a PowerPoint presentation is ingested, the entire deck is converted to a PDF using LibreOffice. This ensures visual consistency and preserves complex slide elements.
+### Assembly Flow
 
-2. **Individual Slide Extraction**: Each slide from the PDF is extracted as a separate PDF page, allowing for:
-   - Thumbnail generation from PDF pages
-   - Individual slide processing for search
-   - Preservation of visual elements that might be lost in direct PPTX processing
-
-3. **Slide Assembly**: When assembling new presentations, slides can be:
-   - Assembled as PPTX files (using original slide data)
-   - Assembled as PDF files (using extracted PDF pages)
-
-This dual approach ensures that both semantic search capabilities and visual fidelity are maintained throughout the application.
+```
+Selected Slide IDs
+    ↓
+Database Metadata Lookup
+    ↓
+Individual Slide File Loading
+    ↓
+New Presentation Creation (python-pptx)
+    ↓
+├─→ PPTX Export
+└─→ PDF Export (if enabled)
+    ↓
+Download/Storage
+```
 
 ## Technology Stack
 
@@ -127,7 +235,7 @@ This dual approach ensures that both semantic search capabilities and visual fid
 - **Vector Search**: FAISS (faiss-cpu)
 - **Graph RAG**: LightRAG (lightrag-hku)
 - **LLM Integration**: Ollama (local models)
-- **File Processing**: python-pptx, Pillow, PyMuPDF
+- **File Processing**: python-pptx, Pillow, PyMuPDF, LibreOffice
 
 ### Frontend
 - **Templates**: Jinja2
@@ -141,22 +249,138 @@ This dual approach ensures that both semantic search capabilities and visual fid
 
 ## Configuration Management
 
+### Pydantic Settings
+
+All configuration managed through `slidex/config.py`:
+
+```python
+class Settings(BaseSettings):
+    # Database
+    DATABASE_URL: str = "postgresql://localhost:5432/slidex"
+    
+    # Ollama
+    OLLAMA_HOST: str = "http://localhost"
+    OLLAMA_PORT: int = 11434
+    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
+    OLLAMA_SUMMARY_MODEL: str = "granite4:tiny-h"
+    
+    # LightRAG
+    LIGHTRAG_ENABLED: bool = True
+    LIGHTRAG_WORKING_DIR: str = "storage/lightrag"
+    LIGHTRAG_LLM_CONTEXT_SIZE: int = 32768
+    
+    # vLLM Reranker
+    VLLM_RERANKER_ENABLED: bool = False
+    VLLM_RERANKER_URL: str = "http://localhost:8182"
+    VLLM_RERANKER_MODEL: str = "bge-reranker-v2-m3"
+    
+    # Storage
+    STORAGE_ROOT: str = "storage"
+    FAISS_INDEX_PATH: str = "storage/faiss_index.bin"
+    
+    # Search
+    TOP_K_RESULTS: int = 10
+```
+
 ### Environment Variables
-- `DATABASE_URL`: PostgreSQL connection URL
-- `OLLAMA_HOST` / `OLLAMA_PORT`: Ollama server location
-- `OLLAMA_EMBEDDING_MODEL`: Embedding model (default: `nomic-embed-text`)
-- `OLLAMA_SUMMARY_MODEL`: Summary model (default: `granite4:tiny-h`)
-- `STORAGE_ROOT`: Base directory for thumbnails and exports
-- `LIGHTRAG_WORKING_DIR`: LightRAG storage directory
-- `LIGHTRAG_ENABLED`: Enable LightRAG (default: `True`)
-- `LIGHTRAG_LLM_CONTEXT_SIZE`: Context size for LightRAG LLM (default: `32768`)
-- `FAISS_INDEX_PATH`: Path to FAISS index file
-- `TOP_K_RESULTS`: Default number of search results (default: 10)
+
+Configuration can be overridden via:
+1. `.env` file in project root
+2. Environment variables
+3. `config/dev.yaml` file
+
+## Database Schema
+
+### Decks Table
+```sql
+CREATE TABLE decks (
+    deck_id UUID PRIMARY KEY,
+    file_hash TEXT UNIQUE NOT NULL,
+    original_path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    uploader TEXT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    slide_count INTEGER,
+    notes JSONB
+);
+```
+
+### Slides Table
+```sql
+CREATE TABLE slides (
+    slide_id UUID PRIMARY KEY,
+    deck_id UUID REFERENCES decks(deck_id) ON DELETE CASCADE,
+    slide_index INTEGER NOT NULL,
+    title_header TEXT,
+    plain_text TEXT,
+    summary_10_20_words TEXT,
+    thumbnail_path TEXT,
+    slide_file_path TEXT,
+    pdf_page_path TEXT,
+    original_slide_position INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### FAISS Index Table
+```sql
+CREATE TABLE faiss_index (
+    slide_id UUID PRIMARY KEY REFERENCES slides(slide_id) ON DELETE CASCADE,
+    vector_id INTEGER UNIQUE NOT NULL
+);
+```
+
+## Global Singleton Instances
+
+The codebase uses singleton pattern for core components:
+
+```python
+# Configuration
+from slidex.config import settings
+
+# Logging
+from slidex.logging_config import logger
+
+# Database
+from slidex.core.database import db
+
+# Vector Index
+from slidex.core.vector_index import vector_index
+
+# Ollama Client
+from slidex.core.ollama_client import ollama_client
+
+# LightRAG Client
+from slidex.core.lightrag_client import lightrag_client
+
+# Audit Logger
+from slidex.core.audit_logger import audit_logger
+
+# Processing Engines
+from slidex.core.ingest import ingest_engine
+from slidex.core.search import search_engine
+from slidex.core.slide_processor import slide_processor
+from slidex.core.assembler import slide_assembler
+```
+
+## Storage Structure
+
+```
+storage/
+├── slides/              # Individual slide files ({slide_id}.pptx)
+├── pdf_pages/           # Individual slide PDFs ({slide_id}.pdf)
+├── thumbnails/          # Slide thumbnails (organized by deck_id)
+├── exports/             # Assembled presentations
+├── logs/                # Application logs
+├── lightrag/            # LightRAG knowledge graph
+├── audit.db             # LLM audit database
+└── faiss_index.bin      # FAISS vector index (legacy)
+```
 
 ## Security Considerations
 
 ### Single-User Design
-- No authentication or authorization (single-user local app)
+- No authentication or authorization
 - No containerization (explicitly no Docker)
 - No enterprise-grade features in this release
 
@@ -169,7 +393,7 @@ This dual approach ensures that both semantic search capabilities and visual fid
 ## Performance Considerations
 
 ### Indexing
-- FAISS for fast vector search
+- FAISS for fast vector search (exact search with IndexFlatL2)
 - PostgreSQL indexing for metadata queries
 - LightRAG graph for semantic relationships
 
@@ -177,6 +401,63 @@ This dual approach ensures that both semantic search capabilities and visual fid
 - Local processing with minimal memory footprint
 - Efficient vector storage and retrieval
 - Caching strategies for frequently accessed data
+
+### Scalability
+- Designed for single-user local use
+- Not optimized for large-scale deployment
+- Suitable for personal slide libraries (thousands of slides)
+
+## Development Workflow
+
+### Setup Process
+1. Prerequisites check (Python 3.12+, PostgreSQL, Ollama)
+2. Virtual environment creation
+3. Dependency installation with uv
+4. Database initialization
+5. Model pulling from Ollama
+
+### Development Commands
+```bash
+just setup          # Complete development setup
+just run            # Start FastAPI development server
+just test           # Run test suite
+just ingest-file    # Ingest single file
+just ingest-folder  # Ingest folder recursively
+just pull-models    # Pull required Ollama models
+just clean-data     # Clean all data and restart fresh
+```
+
+## Testing Strategy
+
+### Unit Tests
+- Individual component testing
+- Mocked external dependencies (Ollama, PostgreSQL)
+- Database interaction testing
+
+### Integration Tests
+- End-to-end ingestion workflow
+- Search and retrieval functionality
+- Assembly and export processes
+
+### Test Coverage
+- Run with: `just test-coverage`
+- HTML report generated in `htmlcov/`
+
+## Error Handling
+
+### Common Error Types
+- Database connection failures
+- Ollama connection errors
+- File access issues
+- Model not found errors
+- Memory constraints
+- LibreOffice not available (PDF processing)
+
+### Recovery Strategies
+- Graceful degradation (PDF processing optional)
+- Retry mechanisms for transient failures
+- Clear error messages with actionable guidance
+- Comprehensive logging for debugging
 
 ## Deployment Model
 
@@ -190,6 +471,7 @@ This dual approach ensures that both semantic search capabilities and visual fid
 - Not designed for production deployment
 - Single-user focus
 - No scalability features
+- No authentication/authorization
 
 ## Future Enhancements
 
@@ -199,54 +481,119 @@ This dual approach ensures that both semantic search capabilities and visual fid
 3. Multi-user support and authentication
 4. Containerization for easier deployment
 5. Advanced formatting preservation in assembly
-6. Export to other formats (PDF, etc.)
-7. Cloud integration options
+6. Cloud integration options
+7. Batch processing optimizations
+8. Enhanced graph visualization
 
-## Development Workflow
+## API Reference
 
-### Setup Process
-1. Prerequisites check (Python 3.12+, PostgreSQL, Ollama)
-2. Virtual environment creation
-3. Dependency installation with uv
-4. Database initialization
-5. Model pulling from Ollama
+### REST API Endpoints
 
-### Development Commands
-- `just setup`: Complete development setup
-- `just run`: Start FastAPI development server
-- `just test`: Run test suite
-- `just ingest-file`: Ingest single file
-- `just ingest-folder`: Ingest folder recursively
-- `just pull-models`: Pull required Ollama models
+**Ingestion:**
+- `POST /api/ingest/file` - Ingest single file
+- `POST /api/ingest/folder` - Ingest folder (recursive option)
 
-## Testing Strategy
+**Search:**
+- `POST /api/search` - Semantic search with LightRAG
+  - Parameters: `query`, `top_k`, `mode` (naive/local/global/hybrid)
 
-### Unit Tests
-- Individual component testing
-- Mocked external dependencies
-- Database interaction testing
+**Assembly:**
+- `POST /api/assemble` - Assemble selected slides
+  - Parameters: `slide_ids`, `preserve_order`
 
-### Integration Tests
-- End-to-end ingestion workflow
-- Search and retrieval functionality
-- Assembly and export processes
+**Download:**
+- `GET /api/download/{filename}` - Download assembled presentation
 
-### System Tests
-- Complete workflow testing
-- Performance benchmarking
-- Edge case handling
+**Metadata:**
+- `GET /api/decks` - List all decks
+- `GET /api/deck/{deck_id}` - Get deck details
+- `GET /api/slide/{slide_id}` - Get slide details
 
-## Error Handling
+### CLI Commands
 
-### Common Error Types
-- Database connection failures
-- Ollama connection errors
-- File access issues
-- Model not found errors
-- Memory constraints
+**Ingestion:**
+```bash
+slidex ingest file <path>
+slidex ingest folder <path> --recursive
+```
 
-### Recovery Strategies
-- Graceful degradation
-- Retry mechanisms
-- Clear error messages
-- Logging for debugging
+**Search:**
+```bash
+slidex search "query" --top-k 10 --mode hybrid
+```
+
+**Assembly:**
+```bash
+slidex assemble --slide-ids "id1,id2" --output "result.pptx"
+```
+
+## Troubleshooting Guide
+
+### Common Issues
+
+**1. Command not found: slidex**
+- Solution: Activate virtual environment or use `just` commands
+
+**2. Ollama connection errors**
+- Check Ollama is running: `ollama serve`
+- Verify models: `ollama list`
+
+**3. Database connection errors**
+- Check PostgreSQL is running
+- Verify DATABASE_URL in config
+- Run: `just init-db`
+
+**4. PDF processing disabled**
+- Install LibreOffice: `brew install libreoffice`
+- Enable: `just enable-pdf`
+
+**5. Import errors**
+- Activate venv: `source .venv/bin/activate`
+- Reinstall: `just install`
+
+## Monitoring and Debugging
+
+### Logging
+- Application logs: `storage/logs/slidex.log`
+- View live: `just logs`
+- Log level controlled by `LOG_LEVEL` env var
+
+### Audit Logs
+- LLM interactions: `storage/audit.db`
+- View recent: `just audit-logs`
+- Query with SQLite: `sqlite3 storage/audit.db`
+
+### Database Statistics
+- View stats: `just db-stats`
+- Shows deck count, slide count, index size
+
+### Index Statistics
+- FAISS index: `just index-stats`
+- Shows vector count, index size
+
+## Best Practices
+
+### Ingestion
+- Use `just ingest-folder` for batch processing
+- Monitor logs during large ingestions
+- Clean data before re-ingesting: `just clean-data`
+
+### Search
+- Use hybrid mode for best results
+- Adjust `top_k` based on needs
+- Enable vLLM reranker for enhanced quality
+
+### Assembly
+- Preview slides before assembling
+- Use `preserve_order` for specific ordering
+- Check both PPTX and PDF outputs
+
+### Maintenance
+- Regular database backups
+- Monitor storage usage
+- Clean old exports periodically
+- Review audit logs for LLM usage
+
+---
+
+*End of Solution Design Document*
