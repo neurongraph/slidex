@@ -113,7 +113,7 @@ class Settings(BaseSettings):
     
     # Flask
     flask_host: str = Field(default="0.0.0.0", description="Flask host")
-    flask_port: int = Field(default=5000, description="Flask port")
+    flask_port: int = Field(default=5001, description="FastAPI/Uvicorn port")
     flask_debug: bool = Field(default=True, description="Flask debug mode")
     
     @property

@@ -61,6 +61,10 @@
     
     .lightrag-answer-content {
         line-height: 1.6;
+        max-height: 400px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 0.5rem;
     }
     
     .lightrag-answer-content h1,
@@ -325,7 +329,7 @@
             const data = await response.json();
             
             if (data.success) {
-                displayResults(data.results, data.lightrag_response);
+                displayResults(data.results, data.response);
             } else {
                 resultsDiv.innerHTML = '<div class="alert alert-error">Error: ' + (data.error || 'Unknown error') + '</div>';
             }

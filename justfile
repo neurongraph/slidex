@@ -23,13 +23,13 @@ pull-models:
     ollama pull granite4:tiny-h
     @echo "✓ Models ready"
 
-# Run the Flask development server
+# Run the FastAPI development server
 run:
-    FLASK_APP=slidex.api.app:app FLASK_ENV=development uv run flask run --host=0.0.0.0 --port=5001
+    uv run uvicorn slidex.api.app:app --host=0.0.0.0 --port=5001 --reload
 
-# Stop any running Flask instances (if backgrounded)
+# Stop any running Uvicorn instances
 stop:
-    pkill -f "flask run" || true
+    pkill -f "uvicorn slidex.api.app" || true
 
 # Run all tests
 test:

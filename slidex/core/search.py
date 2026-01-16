@@ -18,12 +18,12 @@ class SearchEngine:
     """Engine for searching slides using semantic search."""
     
     @staticmethod
-    def search(
+    async def search(
         query: str,
         top_k: Optional[int] = None,
         session_id: Optional[str] = None,
         mode: Literal["naive", "local", "global", "hybrid"] = "hybrid"
-    ) -> List[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         Search for slides matching the query.
         
@@ -34,7 +34,7 @@ class SearchEngine:
             mode: Query mode for LightRAG (naive, local, global, hybrid)
             
         Returns:
-            List of search results with slide metadata and scores
+            Dict with 'results' list and optional 'response' (markdown answer)
         """
         if top_k is None:
             top_k = settings.top_k_results
@@ -44,9 +44,12 @@ class SearchEngine:
         try:
             # Use LightRAG if enabled, otherwise fall back to FAISS
             if settings.lightrag_enabled:
-                return SearchEngine._search_with_lightrag(query, top_k, mode)
+                return await SearchEngine._search_with_lightrag(query, top_k, mode)
             else:
-                return SearchEngine._search_with_faiss(query, top_k, session_id)
+                return {
+                    'results': SearchEngine._search_with_faiss(query, top_k, session_id),
+                    'response': None
+                }
         except Exception as e:
             logger.error(f"Error in search: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
@@ -118,7 +121,7 @@ class SearchEngine:
         return results
     
     @staticmethod
-    def _search_with_lightrag(
+    async def _search_with_lightrag(
         query: str,
         top_k: int,
         mode: str
@@ -141,10 +144,12 @@ class SearchEngine:
                 lightrag_client.initialize()
             
             logger.debug("Retrieving context chunks from LightRAG")
-            # Add timeout to prevent hanging
+            
+            # Use async aquery() method since we're in FastAPI's event loop
+            logger.debug("Calling LightRAG async query")
             try:
-                # Execute query directly - LightRAG query is synchronous
-                context = lightrag_client.rag.query(
+                # Call the async aquery() method directly - no event loop conflicts
+                context = await lightrag_client.rag.aquery(
                     query,
                     param=QueryParam(
                         mode=mode,
@@ -153,10 +158,23 @@ class SearchEngine:
                         enable_rerank=False,
                     ),
                 )
+                logger.debug("LightRAG async query completed")
             except Exception as e:
                 logger.error(f"Error in LightRAG query: {e}")
                 logger.error(f"Traceback: {traceback.format_exc()}")
                 raise
+            
+            # Convert context to string if needed
+            logger.debug(f"Converting context to string")
+            if hasattr(context, 'text'):
+                context = str(context.text)
+            elif hasattr(context, '__str__'):
+                context = str(context)
+            else:
+                context = str(context)
+            
+            logger.debug(f"LightRAG query completed, context length: {len(context) if context else 0}")
+
             
             if not context:
                 logger.info("No context from LightRAG")
@@ -165,8 +183,10 @@ class SearchEngine:
             logger.debug(f"LightRAG context length: {len(context)}")
             
             # Step 2: Extract [SLIDE_ID:uuid] markers from context
+            logger.debug("Extracting slide IDs from context markers")
             marker_pattern = r'\[SLIDE_ID:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\]'
             slide_ids = re.findall(marker_pattern, context, re.IGNORECASE)
+            logger.debug(f"Found {len(slide_ids)} slide IDs in pattern")
             
             if not slide_ids:
                 logger.warning("No slide IDs found in LightRAG context, falling back to FAISS")
@@ -175,6 +195,7 @@ class SearchEngine:
             logger.info(f"Extracted {len(slide_ids)} slide IDs from context markers")
             
             # Remove duplicates while preserving order
+            logger.debug("Removing duplicate slide IDs")
             seen = set()
             unique_slide_ids = []
             for sid in slide_ids:
@@ -185,27 +206,40 @@ class SearchEngine:
             
             # Limit to top_k
             unique_slide_ids = unique_slide_ids[:top_k]
+            logger.debug(f"After dedup and limiting: {len(unique_slide_ids)} unique slide IDs")
             
             logger.info(f"Found {len(unique_slide_ids)} unique slide IDs from LightRAG")
             
-            # Step 3: Generate natural language response (optional, for display)
-            response_text = None
+            # Step 3: Generate natural language response from LightRAG
+            logger.debug("Generating natural language answer from LightRAG")
             try:
-                logger.debug("Generating natural language response")
-                response_result = lightrag_client.query(
-                    query,
-                    mode=mode,
-                    top_k=top_k,
-                    include_references=False
+                # Use LightRAG's async method to generate a markdown answer
+                answer = await lightrag_client.rag.aquery(
+                    f"Based on the context provided, answer this user question in markdown format: {query}",
+                    param=QueryParam(
+                        mode=mode,
+                        only_need_context=False,  # Get full answer, not just context
+                        top_k=top_k,
+                        enable_rerank=False,
+                    ),
                 )
-                response_text = response_result.get('response', '') if isinstance(response_result, dict) else response_result
+                # Convert answer to string if needed
+                if hasattr(answer, 'text'):
+                    response_text = str(answer.text)
+                elif hasattr(answer, '__str__'):
+                    response_text = str(answer)
+                else:
+                    response_text = str(answer)
+                logger.debug(f"Generated answer length: {len(response_text)}")
             except Exception as e:
-                logger.warning(f"Error generating response text: {e}")
-                response_text = f"Found {len(unique_slide_ids)} relevant slides for query: {query}"
+                logger.warning(f"Failed to generate answer: {e}")
+                response_text = f"Found {len(unique_slide_ids)} relevant slides matching your query: '{query}'"
             
             # Step 4: Retrieve slide metadata from database
+            logger.debug("Retrieving slide metadata from database")
             results = []
             for idx, slide_id in enumerate(unique_slide_ids):
+                logger.debug(f"Fetching slide {idx+1}/{len(unique_slide_ids)}: {slide_id}")
                 slide = db.get_slide_by_id(slide_id)
                 if slide:
                     # Assign score based on position (earlier = higher score)
@@ -222,7 +256,6 @@ class SearchEngine:
                         'plain_text_preview': slide['plain_text'][:200] if slide['plain_text'] else '',
                         'thumbnail_path': slide['thumbnail_path'],
                         'score': score,
-                        'lightrag_response': response_text if idx == 0 else None,  # Include full response with first result
                     }
                     results.append(result)
                 else:
@@ -230,16 +263,27 @@ class SearchEngine:
             
             if not results:
                 logger.warning("No valid slides found, falling back to FAISS")
-                return SearchEngine._search_with_faiss(query, top_k)
+                fallback_results = SearchEngine._search_with_faiss(query, top_k)
+                return {
+                    'results': fallback_results,
+                    'response': None
+                }
             
             logger.info(f"Returning {len(results)} search results from LightRAG")
-            return results
+            return {
+                'results': results,
+                'response': response_text
+            }
             
         except Exception as e:
             logger.error(f"Error searching with LightRAG: {e}")
             # Fallback to FAISS on error
             logger.warning("Falling back to FAISS search")
-            return SearchEngine._search_with_faiss(query, top_k)
+            fallback_results = SearchEngine._search_with_faiss(query, top_k)
+            return {
+                'results': fallback_results,
+                'response': None
+            }
 
 
 # Global search engine instance

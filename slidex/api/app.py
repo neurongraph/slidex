@@ -1,10 +1,14 @@
 """
-Flask web application and API for Slidex.
+FastAPI web application and API for Slidex.
+Migrated from Flask to support async operations with LightRAG.
 """
 
-from flask import Flask, request, jsonify, render_template, send_file, send_from_directory
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 import json
 import traceback
 
@@ -16,57 +20,58 @@ from slidex.core.assembler import slide_assembler
 from slidex.core.database import db
 from slidex.core.graph_visualizer import graph_visualizer
 
+# Initialize FastAPI app
+app = FastAPI(title="Slidex", description="PowerPoint slide management with semantic search")
 
-app = Flask(
-    __name__,
-    template_folder="../templates",
-    static_folder="../static"
-)
+# Setup templates
+templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
-app.config['SECRET_KEY'] = 'dev-secret-key'  # Change in production
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
+# Setup static files
+static_path = Path(__file__).parent.parent / "static"
+if static_path.exists():
+    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 
 # ============= Web UI Routes =============
 
-@app.route('/')
-def index():
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
     """Home page with search interface."""
-    return render_template('index.html')
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
-@app.route('/ingest')
-def ingest_page():
+@app.get("/ingest", response_class=HTMLResponse)
+async def ingest_page(request: Request):
     """Ingest page."""
-    return render_template('ingest.html')
+    return templates.TemplateResponse("ingest.html", {"request": request})
 
 
-@app.route('/decks')
-def decks_page():
+@app.get("/decks", response_class=HTMLResponse)
+async def decks_page(request: Request):
     """View all decks."""
     decks = db.get_all_decks()
-    return render_template('decks.html', decks=decks)
+    return templates.TemplateResponse("decks.html", {"request": request, "decks": decks})
 
 
-@app.route('/graph')
-def graph_page():
+@app.get("/graph", response_class=HTMLResponse)
+async def graph_page(request: Request):
     """Knowledge graph visualization page."""
-    return render_template('graph.html')
+    return templates.TemplateResponse("graph.html", {"request": request})
 
 
 # ============= API Routes =============
 
-@app.route('/api/ingest/file', methods=['POST'])
-def api_ingest_file():
+@app.post("/api/ingest/file")
+async def api_ingest_file(request: Request):
     """
     Ingest a single PowerPoint file.
     Body: { "path": "/path/to/file.pptx", "uploader": "optional" }
     """
     try:
-        data = request.get_json()
+        data = await request.json()
         
         if not data or 'path' not in data:
-            return jsonify({'error': 'Missing required field: path'}), 400
+            raise HTTPException(status_code=400, detail="Missing required field: path")
         
         file_path = Path(data['path'])
         uploader = data.get('uploader')
@@ -76,35 +81,35 @@ def api_ingest_file():
         deck_id = ingest_engine.ingest_file(file_path, uploader=uploader)
         
         if deck_id:
-            return jsonify({
+            return {
                 'success': True,
                 'deck_id': deck_id,
                 'message': 'File ingested successfully'
-            })
+            }
         else:
-            return jsonify({
+            return {
                 'success': False,
                 'message': 'File already ingested (duplicate)'
-            })
+            }
     
     except FileNotFoundError as e:
-        return jsonify({'error': str(e)}), 404
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"API error ingesting file: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/ingest/folder', methods=['POST'])
-def api_ingest_folder():
+@app.post("/api/ingest/folder")
+async def api_ingest_folder(request: Request):
     """
     Ingest all PowerPoint files in a folder.
     Body: { "path": "/path/to/folder", "recursive": true, "uploader": "optional" }
     """
     try:
-        data = request.get_json()
+        data = await request.json()
         
         if not data or 'path' not in data:
-            return jsonify({'error': 'Missing required field: path'}), 400
+            raise HTTPException(status_code=400, detail="Missing required field: path")
         
         folder_path = Path(data['path'])
         recursive = data.get('recursive', True)
@@ -118,22 +123,22 @@ def api_ingest_folder():
             uploader=uploader
         )
         
-        return jsonify({
+        return {
             'success': True,
             'deck_ids': deck_ids,
             'count': len(deck_ids),
             'message': f'{len(deck_ids)} new decks ingested'
-        })
+        }
     
     except FileNotFoundError as e:
-        return jsonify({'error': str(e)}), 404
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"API error ingesting folder: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/search', methods=['POST'])
-def api_search():
+@app.post("/api/search")
+async def api_search(request: Request):
     """Search for slides.
 
     Body: { 
@@ -146,10 +151,10 @@ def api_search():
     answer in `lightrag_response` summarizing the query.
     """
     try:
-        data = request.get_json()
+        data = await request.json()
         
         if not data or 'query' not in data:
-            return jsonify({'error': 'Missing required field: query'}), 400
+            raise HTTPException(status_code=400, detail="Missing required field: query")
         
         query = data['query']
         top_k = data.get('top_k', settings.top_k_results)
@@ -158,64 +163,60 @@ def api_search():
         # Validate mode
         valid_modes = ['naive', 'local', 'global', 'hybrid']
         if mode not in valid_modes:
-            return jsonify({
-                'error': f'Invalid mode. Must be one of: {valid_modes}'
-            }), 400
+            raise HTTPException(
+                status_code=400,
+                detail=f'Invalid mode. Must be one of: {valid_modes}'
+            )
         
         logger.info(f"API: Searching for '{query}' (top_k={top_k}, mode={mode})")
         
         try:
-            results = search_engine.search(query, top_k=top_k, mode=mode)
+            search_result = await search_engine.search(query, top_k=top_k, mode=mode)
+            results = search_result.get('results', [])
+            lightrag_response = search_result.get('response')
         except Exception as e:
             logger.error(f"Error in API search: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return jsonify({
-                'success': False,
-                'error': str(e)
-            }), 500
+            raise HTTPException(status_code=500, detail=str(e))
 
-        # Extract LightRAG's natural language answer if present (stored on the
-        # first result in LightRAG mode).
-        lightrag_response = None
-        for r in results:
-            if isinstance(r, dict) and r.get('lightrag_response'):
-                lightrag_response = r['lightrag_response']
-                break
-        
-        return jsonify({
+        return {
             'success': True,
             'results': results,
             'count': len(results),
             'mode': mode,
-            'lightrag_response': lightrag_response,
-        })
+            'response': lightrag_response,
+        }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"API error searching: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/slide/<slide_id>/preview', methods=['GET'])
-def api_slide_preview(slide_id: str):
+@app.get("/api/slide/{slide_id}/preview")
+async def api_slide_preview(slide_id: str):
     """Get slide preview metadata."""
     try:
         slide = db.get_slide_by_id(slide_id)
         
         if not slide:
-            return jsonify({'error': 'Slide not found'}), 404
+            raise HTTPException(status_code=404, detail="Slide not found")
         
-        return jsonify({
+        return {
             'success': True,
             'slide': slide
-        })
+        }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"API error getting slide preview: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/assemble', methods=['POST'])
-def api_assemble():
+@app.post("/api/assemble")
+async def api_assemble(request: Request):
     """Assemble slides into a new presentation.
 
     The API now always produces **both** PPTX and PDF outputs for simplicity.
@@ -226,17 +227,17 @@ def api_assemble():
     }
     """
     try:
-        data = request.get_json()
+        data = await request.json()
         
         if not data or 'slide_ids' not in data:
-            return jsonify({'error': 'Missing required field: slide_ids'}), 400
+            raise HTTPException(status_code=400, detail="Missing required field: slide_ids")
         
         slide_ids = data['slide_ids']
         output_filename = data.get('output_filename')
         preserve_order = data.get('preserve_order', True)
         
         if not isinstance(slide_ids, list) or not slide_ids:
-            return jsonify({'error': 'slide_ids must be a non-empty list'}), 400
+            raise HTTPException(status_code=400, detail="slide_ids must be a non-empty list")
 
         logger.info(f"API: Assembling {len(slide_ids)} slides into PPTX and PDF")
 
@@ -254,58 +255,59 @@ def api_assemble():
             preserve_order=preserve_order,
         )
         
-        return jsonify({
+        return {
             'success': True,
             'pptx_file': str(pptx_path),
             'pptx_download_url': f'/api/download/{pptx_path.name}',
             'pdf_file': str(pdf_path),
             'pdf_download_url': f'/api/download/{pdf_path.name}',
             'slide_count': len(slide_ids),
-        })
+        }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"API error assembling slides: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/download/<filename>', methods=['GET'])
-def api_download(filename: str):
+@app.get("/api/download/{filename}")
+async def api_download(filename: str):
     """Download an assembled presentation."""
     try:
-        # exports_dir is relative to project root, not to app.py location
+        # exports_dir is relative to project root
         file_path = settings.exports_dir
         if not file_path.is_absolute():
             file_path = Path.cwd() / file_path
         file_path = file_path / filename
 
         if not file_path.exists():
-            return jsonify({'error': 'File not found'}), 404
+            raise HTTPException(status_code=404, detail="File not found")
 
-        # Infer content type from optional query param
-        fmt = request.args.get('format', '').lower()
-        if fmt == 'pdf' or filename.lower().endswith('.pdf'):
-            mimetype = 'application/pdf'
+        # Infer content type
+        if filename.lower().endswith('.pdf'):
+            media_type = 'application/pdf'
         else:
-            mimetype = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            media_type = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
         
-        return send_file(
+        return FileResponse(
             file_path,
-            as_attachment=True,
-            download_name=filename,
-            mimetype=mimetype,
+            media_type=media_type,
+            filename=filename
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"API error downloading file: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/thumbnails/<path:filepath>', methods=['GET'])
-def api_thumbnail(filepath: str):
+@app.get("/api/thumbnails/{filepath:path}")
+async def api_thumbnail(filepath: str):
     """Serve thumbnail images."""
     try:
-        # Filepath from database is already relative to project root (storage/thumbnails/...)
-        # So we need to resolve it from the project root, not from thumbnails_dir
+        # Filepath from database is already relative to project root
         thumbnail_path = Path(filepath)
         
         # If it's not absolute, make it relative to project root
@@ -313,79 +315,83 @@ def api_thumbnail(filepath: str):
             thumbnail_path = Path.cwd() / thumbnail_path
         
         if not thumbnail_path.exists():
-            return jsonify({'error': 'Thumbnail not found'}), 404
+            raise HTTPException(status_code=404, detail="Thumbnail not found")
         
-        return send_file(thumbnail_path, mimetype='image/png')
+        return FileResponse(thumbnail_path, media_type='image/png')
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"API error serving thumbnail: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/decks', methods=['GET'])
-def api_get_decks():
+@app.get("/api/decks")
+async def api_get_decks():
     """Get all decks."""
     try:
         decks = db.get_all_decks()
-        return jsonify({
+        return {
             'success': True,
             'decks': decks,
             'count': len(decks)
-        })
+        }
     except Exception as e:
         logger.error(f"API error getting decks: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/graph/data', methods=['GET'])
-def api_graph_data():
+@app.get("/api/graph/data")
+async def api_graph_data():
     """Get knowledge graph data for visualization."""
     try:
         if not settings.lightrag_enabled:
-            return jsonify({
-                'error': 'LightRAG is not enabled'
-            }), 400
+            raise HTTPException(status_code=400, detail="LightRAG is not enabled")
         
         graph_data = graph_visualizer.export_graph_data()
-        return jsonify({
+        return {
             'success': True,
             'graph': graph_data
-        })
+        }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"API error getting graph data: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/api/graph/stats', methods=['GET'])
-def api_graph_stats():
+@app.get("/api/graph/stats")
+async def api_graph_stats():
     """Get knowledge graph statistics."""
     try:
         if not settings.lightrag_enabled:
-            return jsonify({
-                'error': 'LightRAG is not enabled'
-            }), 400
+            raise HTTPException(status_code=400, detail="LightRAG is not enabled")
         
         stats = graph_visualizer.get_graph_stats()
-        return jsonify({
+        return {
             'success': True,
             'stats': stats
-        })
+        }
     
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"API error getting graph stats: {e}")
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.route('/health', methods=['GET'])
-def health():
+@app.get("/health")
+async def health():
     """Health check endpoint."""
-    return jsonify({'status': 'healthy', 'service': 'slidex'})
+    return {'status': 'healthy', 'service': 'slidex'}
 
 
 if __name__ == '__main__':
-    app.run(
+    import uvicorn
+    uvicorn.run(
+        app,
         host=settings.flask_host,
-        port=settings.flask_port,
-        debug=settings.flask_debug
+        port=settings.flask_port
     )
+

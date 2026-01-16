@@ -15,6 +15,14 @@ from lightrag.utils import wrap_embedding_func_with_attrs
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from lightrag.rerank import generic_rerank_api
 
+# Apply nest_asyncio to allow nested event loops (needed for Flask + asyncio)
+try:
+    import nest_asyncio
+    nest_asyncio.apply()
+    _NEST_ASYNCIO_APPLIED = True
+except ImportError:
+    _NEST_ASYNCIO_APPLIED = False
+
 from slidex.config import settings
 from slidex.logging_config import logger
 from slidex.core.audit_logger import audit_logger
@@ -27,7 +35,6 @@ class LightRAGClient:
         """Initialize LightRAG client."""
         self.rag = None
         self._initialized = False
-        
     async def _initialize_async(self) -> None:
         """Async initialization of LightRAG."""
         if self._initialized:
@@ -103,6 +110,17 @@ class LightRAGClient:
                     **kwargs
                 )
                 
+                # Handle case where response might be an async iterator
+                if hasattr(response, '__aiter__'):
+                    # If it's an async iterator, collect all items
+                    response_text = ''.join([chunk async for chunk in response])
+                elif hasattr(response, '__iter__'):
+                    # If it's a regular iterator, collect all items
+                    response_text = ''.join(response)
+                else:
+                    # It's already a string
+                    response_text = response
+                
                 duration_ms = (time.time() - start_time) * 1000
                 
                 # Log to audit database
@@ -110,12 +128,12 @@ class LightRAGClient:
                     model_name=settings.ollama_summary_model,
                     operation_type="llm_lightrag",
                     input_text=prompt[:500],
-                    output_text=response[:500] if response else "",
+                    output_text=response_text[:500] if response_text else "",
                     metadata={"context_size": settings.lightrag_llm_context_size},
                     duration_ms=duration_ms,
                 )
                 
-                return response
+                return response_text
             except Exception as e:
                 duration_ms = (time.time() - start_time) * 1000
                 logger.error(f"Error in LightRAG LLM call: {e}")
@@ -172,10 +190,18 @@ class LightRAGClient:
         self.rag = LightRAG(**lightRAG_kwargs)
         
         # Initialize storages
-        await self.rag.initialize_storages()
+        try:
+            await self.rag.initialize_storages()
+        except Exception as e:
+            logger.error(f"Error initializing LightRAG storages: {e}")
+            raise
         
         # Initialize pipeline status (required for insert operations)
-        await initialize_pipeline_status()
+        try:
+            await initialize_pipeline_status()
+        except Exception as e:
+            logger.error(f"Error initializing pipeline status: {e}")
+            raise
         
         self._initialized = True
         logger.info("LightRAG client initialized successfully")
@@ -186,8 +212,38 @@ class LightRAGClient:
             # Add timeout to prevent hanging during initialization
             try:
                 import asyncio
-                # Run with timeout to prevent hanging
-                asyncio.run(asyncio.wait_for(self._initialize_async(), timeout=60.0))
+                import threading
+                import time
+                
+                # Check if we're already in an event loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    # If we're in an event loop, we can't create a new one
+                    # Instead, we'll run the async initialization in a thread
+                    def run_async_init():
+                        try:
+                            asyncio.run(self._initialize_async())
+                        except Exception as e:
+                            logger.error(f"Failed to initialize LightRAG in thread: {e}")
+                            raise
+                    
+                    # Run in a separate thread to avoid nested event loop issues
+                    thread = threading.Thread(target=run_async_init)
+                    thread.start()
+                    thread.join(timeout=60.0)  # 60 second timeout
+                    
+                    if thread.is_alive():
+                        logger.error("LightRAG initialization timed out (thread still running)")
+                        raise TimeoutError("LightRAG initialization timed out")
+                        
+                except RuntimeError:
+                    # No event loop running, create a new one
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        loop.run_until_complete(asyncio.wait_for(self._initialize_async(), timeout=60.0))
+                    finally:
+                        loop.close()
             except asyncio.TimeoutError:
                 logger.error("LightRAG initialization timed out")
                 raise
