@@ -21,7 +21,7 @@ just pull-models
 
 ### Development
 ```bash
-# Run Flask development server
+# Run FastAPI development server
 just run
 
 # Run all tests
@@ -177,7 +177,7 @@ just clean-all
 - Commands: \`ingest\`, \`search\`, \`assemble\`, \`version\`
 
 #### Web API (\`slidex/api/app.py\`)
-- Flask-based REST API and web UI
+- FastAPI-based REST API and web UI
 - API endpoints: \`/api/ingest/file\`, \`/api/ingest/folder\`, \`/api/search\`, \`/api/assemble\`
 - Web pages: \`/\` (search), \`/ingest\`, \`/decks\`
 - Templates in \`slidex/templates/\`

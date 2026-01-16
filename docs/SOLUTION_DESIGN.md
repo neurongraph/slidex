@@ -37,7 +37,7 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 ### Component Breakdown
 
 #### 1. User Interface Layer
-- **Web UI**: Flask-based interface with Jinja2 templates
+- **Web UI**: FastAPI-based interface with Jinja2 templates
 - **CLI**: Typer-based command-line interface
 - **REST API**: Programmatic access to core functionality
 
@@ -122,7 +122,7 @@ This dual approach ensures that both semantic search capabilities and visual fid
 
 ### Backend
 - **Language**: Python 3.12+
-- **Framework**: Flask (Web UI), Typer (CLI)
+- **Framework**: FastAPI (Web UI), Typer (CLI)
 - **Database**: PostgreSQL (metadata), FAISS (vector search), SQLite (audit)
 - **Vector Search**: FAISS (faiss-cpu)
 - **Graph RAG**: LightRAG (lightrag-hku)
@@ -184,7 +184,7 @@ This dual approach ensures that both semantic search capabilities and visual fid
 - Single-user local application
 - No containerization
 - Local database and storage
-- Development server with Flask
+- Development server with FastAPI
 
 ### Production Considerations
 - Not designed for production deployment
@@ -213,7 +213,7 @@ This dual approach ensures that both semantic search capabilities and visual fid
 
 ### Development Commands
 - `just setup`: Complete development setup
-- `just run`: Start Flask development server
+- `just run`: Start FastAPI development server
 - `just test`: Run test suite
 - `just ingest-file`: Ingest single file
 - `just ingest-folder`: Ingest folder recursively

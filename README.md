@@ -1,26 +1,26 @@
 # Slidex
 
-Slidex is a single-user Python application for managing PowerPoint slides with semantic search capabilities. It uses LightRAG, a graph-based retrieval system, to provide advanced semantic search with entity extraction and relationship mapping across slides.
+Slidex is a single-user Python application for managing PowerPoint slides with semantic search capabilities. It uses LightRAG, a graph-based retrieval system, to provide advanced semantic search with entity extraction and relationship mapping across slides. You can ask a query, get relevant slides with their thumbnail previews and assemble a new deck from the slides you select. The output is both in pptx and pdf formats
 
 ## Features
 
 - **LightRAG Integration**: Graph-based RAG with entity extraction and relationship discovery
-- **Multiple Query Modes**: naive, local, global, and hybrid search strategies
 - **Ingest PowerPoint files**: Single files or entire folders (recursive)
-- **Deduplication**: Automatic detection and skipping of duplicate files
 - **Advanced semantic search**: Find slides using natural language with context awareness
 - **Slide preview**: Thumbnails and summaries for each slide
 - **Slide assembly**: Create new presentations from search results
-- **Local models**: Uses Ollama for embeddings and summarization (no cloud APIs)
+- **Local models**: Uses Ollama for embeddings and summarization (no cloud APIs), and vLLM based Reranking model
 - **Audit logging**: All LLM interactions logged to SQLite for full auditability
-- **Web UI**: Simple Flask-based interface for search and browsing
+- **Web UI**: Simple FastAPI-based interface for search and browsing
 - **CLI**: Command-line interface for batch operations
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.9+
 - PostgreSQL (for metadata storage)
 - Ollama (running locally for embeddings and LLM)
+- vLLM
+- LibreOffice
 - uv (Python package manager)
 
 ### Required Ollama Models
@@ -30,20 +30,6 @@ Download the required models before using Slidex:
 ```bash
 ollama pull nomic-embed-text
 ollama pull granite4:tiny-h
-```
-
-**Important**: LightRAG requires Ollama models with a context size of at least 32k tokens. You may need to configure your Ollama model:
-
-```bash
-# Create a Modelfile with increased context
-ollama show --modelfile granite4:tiny-h > Modelfile
-echo "PARAMETER num_ctx 32768" >> Modelfile
-ollama create granite4:tiny-h-32k -f Modelfile
-```
-
-Then update your `.env` file to use the new model:
-```
-OLLAMA_SUMMARY_MODEL=granite4:tiny-h-32k
 ```
 
 ## Installation
@@ -78,25 +64,6 @@ just pull-models
 brew install libreoffice
 ```
 
-**Alternative: Manual Setup**
-
-If you prefer manual setup:
-```bash
-# Create virtual environment
-python3.13 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-uv pip install -e .
-
-# Create .env file
-cat > .env << EOF
-DATABASE_URL=postgresql://localhost:5432/slidex
-OLLAMA_HOST=http://localhost
-OLLAMA_PORT=11434
-LOG_LEVEL=INFO
-EOF
-
 # Initialize database
 just init-db
 ```
@@ -109,9 +76,7 @@ The application uses Pydantic settings for configuration. You can set configurat
 2. A `config/dev.yaml` file (see `config/dev.yaml.example`)
 3. Default values in the code
 
-### LightRAG Configuration
 
-LightRAG is enabled by default. You can disable it by setting `LIGHTRAG_ENABLED=false`.
 
 ### vLLM Reranker Configuration
 
@@ -128,60 +93,6 @@ VLLM_RERANKER_URL=http://localhost:8182
 VLLM_RERANKER_MODEL=bge-reranker-v2-m3
 ```
 
-## Installation
-
-1. Clone the repository:
-```bash
-git clone <repository-url>
-cd slidex
-```
-
-2. Run the complete setup:
-```bash
-# This will create venv, install dependencies, create .env, and init database
-just setup
-```
-
-3. Activate the virtual environment:
-```bash
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-4. Pull required Ollama models:
-```bash
-just pull-models
-# Or manually:
-# ollama pull nomic-embed-text
-# ollama pull granite4:tiny-h
-```
-
-**Note**: For full PDF processing capabilities, install LibreOffice:
-```bash
-brew install libreoffice
-```
-
-**Alternative: Manual Setup**
-
-If you prefer manual setup:
-```bash
-# Create virtual environment
-python3.13 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-uv pip install -e .
-
-# Create .env file
-cat > .env << EOF
-DATABASE_URL=postgresql://localhost:5432/slidex
-OLLAMA_HOST=http://localhost
-OLLAMA_PORT=11434
-LOG_LEVEL=INFO
-EOF
-
-# Initialize database
-just init-db
-```
 
 ## Configuration
 
@@ -232,48 +143,14 @@ slidex ingest folder /path/to/folder --recursive
 slidex ingest file /path/to/file.pptx --uploader "John Doe"
 ```
 
-#### Search
-
-LightRAG provides four query modes:
-- **naive**: Simple semantic search without graph traversal
-- **local**: Focuses on contextually related information  
-- **global**: Utilizes global knowledge across all slides
-- **hybrid**: Combines local and global retrieval (recommended)
-
-```bash
-# Basic search with hybrid mode (default)
-slidex search "machine learning algorithms"
-
-# Search with specific mode
-slidex search "data visualization" --mode global
-
-# Search with custom result count
-slidex search "cloud architecture" --top-k 20 --mode local
-
-# JSON output (for scripting)
-slidex search "neural networks" --json --mode hybrid
-```
-
-#### Assemble Presentations
-
-```bash
-# Assemble slides by ID
-slidex assemble --slide-ids "uuid1,uuid2,uuid3" --output "my_presentation.pptx"
-
-# Preserve slide order as provided
-slidex assemble --slide-ids "uuid1,uuid2,uuid3" --preserve-order
-```
-
-**Note**: Assembled presentations can be created in both PPTX and PDF formats. The system will automatically determine the appropriate format based on the output filename extension.
-
 ### Web UI
 
-Start the Flask development server:
+Start the FastAPI development server:
 
 ```bash
 just run
 # Or manually:
-FLASK_APP=slidex.api.app:app flask run
+uv run python -m slidex.api.app
 ```
 
 Then open your browser to http://localhost:5000
@@ -285,7 +162,7 @@ Then open your browser to http://localhost:5000
 
 ### REST API
 
-The Flask app exposes a REST API for programmatic access:
+The FastAPI app exposes a REST API for programmatic access:
 
 #### Ingest File
 ```bash
@@ -336,7 +213,7 @@ slidex/
 │   ├── logging_config.py      # Loguru setup
 │   ├── api/
 │   │   ├── __init__.py
-│   │   └── app.py            # Flask application
+│   │   └── app.py            # FastAPI application
 │   ├── cli/
 │   │   ├── __init__.py
 │   │   └── main.py           # Typer CLI

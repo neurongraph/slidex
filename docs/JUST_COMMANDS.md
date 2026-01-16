@@ -76,14 +76,14 @@ just disable-pdf
 ## Running the Application
 
 ### `just run`
-Start the Flask development server on http://localhost:5000
+Start the FastAPI development server on http://localhost:5000
 
 ```bash
 just run
 ```
 
 ### `just stop`
-Stop any running Flask instances (if backgrounded).
+Stop any running FastAPI instances (if backgrounded).
 
 ```bash
 just stop
@@ -286,7 +286,7 @@ You can manually edit `.env` to customize these settings.
 |------|-------------|-------------|
 | Setup | `just setup` | `bash scripts/setup_dev.sh` |
 | Install | `just install` | `uv pip install -e .` |
-| Run server | `just run` | `FLASK_APP=slidex.api.app:app flask run` |
+| Run server | `just run` | `uv run python -m slidex.api.app` |
 | Tests | `just test` | `pytest tests/ -v` |
 | Init DB | `just init-db` | `python scripts/init_db.py` |
 | Clean | `just clean` | `rm -rf storage/... __pycache__...` |

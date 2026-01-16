@@ -24,7 +24,7 @@
 ## 2. Environment & Tooling
 - **Language:** Python 3.11+.
 - **Package & environment management:** Use **Poetry** for dependency management and a lightweight virtual environment (`venv`) for the developer environment. Provide a `pyproject.toml` and `poetry.lock`.
-- **Run server:** Use **Flask** (development mode) with `flask run` or `gunicorn` for dev if desired. (No React — Jinja templates only.)
+- **Run server:** Use **FastAPI** (development mode) with `uv run python -m slidex.api.app` or `gunicorn` for dev if desired. (No React — Jinja templates only.)
 - **Local models:** Ollama (already installed) to host local embedding and LLM models for RAG (embedding + optional summarization).
 - **Vector DB:** FAISS (local), persisted to disk; chosen for ease of local embedding and zero external dependencies.
 - **Metadata DB:** PostgreSQL (user already has installed) — store slide and deck metadata, references to thumbnails and original file paths.
@@ -127,7 +127,7 @@ Batch ingestion will run synchronously in dev mode or in simple background threa
 - `slidex search "query text" --top_k 10`
 - `slidex assemble --slide-ids id1,id2,id3 --output out.pptx`
 
-**Flask REST API (simple)**
+**FastAPI REST API (simple)**
 - `POST /api/ingest/file` — body: `{ path: "/path/to/file.pptx" }`
 - `POST /api/ingest/folder` — body: `{ path: "/path/to/folder", "recursive": true }`
 - `POST /api/search` — `{ "query": "...", "top_k": 10 }` -> returns list of hits.
@@ -144,7 +144,7 @@ Note: API is for local use only; no auth by design for the dev release.
 - `faiss` (faiss-cpu) — vector index.
 - `olllama` client or direct HTTP calls to Ollama local endpoint for embeddings and summarization. The models default to nomic-embed-text and granite4:tiny-h, but should be driven by config.py (configurable)
 - `psycopg2` / `asyncpg` — Postgres client (sync mode is acceptable for dev).
-- `Flask`, `Jinja2` — web UI.
+- `FastAPI`, `Jinja2` — web UI.
 - `click` or `typer` — CLI.
 
 ---
