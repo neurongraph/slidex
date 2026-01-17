@@ -3,7 +3,7 @@ FastAPI web application and API for Slidex.
 Migrated from Flask to support async operations with LightRAG.
 """
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Optional, List
 import json
 import traceback
+import tempfile
+import shutil
+import asyncio
+import uuid
 
 from slidex.config import settings
 from slidex.logging_config import logger
@@ -134,6 +138,102 @@ async def api_ingest_folder(request: Request):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"API error ingesting folder: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ingest/upload")
+async def api_ingest_upload(
+    files: List[UploadFile] = File(...),
+    uploader: Optional[str] = Form(None)
+):
+    """
+    Upload and ingest PowerPoint files via web interface.
+    Supports multiple file uploads.
+    Files are saved to the configured storage directory.
+    """
+    results = []
+    uploaded_files = []
+    
+    try:
+        # Create uploads directory in storage if it doesn't exist
+        uploads_dir = settings.storage_root / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        
+        for upload_file in files:
+            try:
+                # Validate filename exists
+                if not upload_file.filename:
+                    results.append({
+                        'filename': 'unknown',
+                        'success': False,
+                        'message': 'No filename provided'
+                    })
+                    continue
+                
+                # Validate file extension
+                if not upload_file.filename.lower().endswith('.pptx'):
+                    results.append({
+                        'filename': upload_file.filename,
+                        'success': False,
+                        'message': 'Only .pptx files are supported'
+                    })
+                    continue
+                
+                # Save uploaded file to storage directory
+                # Use a unique name to avoid conflicts
+                unique_filename = f"{uuid.uuid4().hex}_{upload_file.filename}"
+                file_path = uploads_dir / unique_filename
+                
+                with open(file_path, 'wb') as buffer:
+                    shutil.copyfileobj(upload_file.file, buffer)
+                
+                uploaded_files.append(file_path)
+                logger.info(f"Saved uploaded file: {file_path}")
+                
+                # Ingest the file
+                deck_id = await asyncio.to_thread(
+                    ingest_engine.ingest_file,
+                    file_path,
+                    uploader=uploader
+                )
+                
+                if deck_id:
+                    results.append({
+                        'filename': upload_file.filename,
+                        'success': True,
+                        'deck_id': deck_id,
+                        'message': 'File ingested successfully'
+                    })
+                else:
+                    results.append({
+                        'filename': upload_file.filename,
+                        'success': False,
+                        'message': 'File already ingested (duplicate)'
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error processing {upload_file.filename}: {e}")
+                logger.error(traceback.format_exc())
+                results.append({
+                    'filename': upload_file.filename,
+                    'success': False,
+                    'message': str(e)
+                })
+        
+        # Count successes
+        success_count = sum(1 for r in results if r['success'])
+        
+        return {
+            'success': success_count > 0,
+            'results': results,
+            'total': len(files),
+            'ingested': success_count,
+            'message': f'{success_count} of {len(files)} files ingested successfully'
+        }
+        
+    except Exception as e:
+        logger.error(f"API error in upload: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 

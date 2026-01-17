@@ -153,6 +153,8 @@ class Settings(BaseSettings):
         self.audit_db_path.parent.mkdir(parents=True, exist_ok=True)
         if self.lightrag_enabled:
             self.lightrag_working_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure logs directory exists for loguru file handler
+        (self.storage_root / "logs").mkdir(parents=True, exist_ok=True)
 
 
 # Global settings instance

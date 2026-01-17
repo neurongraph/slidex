@@ -18,20 +18,261 @@
         margin-bottom: 1.5rem;
         border-radius: 4px;
     }
+    .success-box {
+        background: #d4edda;
+        border-left: 4px solid #28a745;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border-radius: 4px;
+    }
+    .error-box {
+        background: #f8d7da;
+        border-left: 4px solid #dc3545;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        border-radius: 4px;
+    }
+    
+    .upload-area {
+        border: 2px dashed #ccc;
+        border-radius: 8px;
+        padding: 3rem 2rem;
+        text-align: center;
+        background: #f9f9f9;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 1.5rem;
+    }
+    
+    .upload-area:hover {
+        border-color: #2196F3;
+        background: #f0f8ff;
+    }
+    
+    .upload-area.dragover {
+        border-color: #2196F3;
+        background: #e3f2fd;
+    }
+    
+    .upload-icon {
+        font-size: 3rem;
+        color: #2196F3;
+        margin-bottom: 1rem;
+    }
+    
+    .file-input {
+        display: none;
+    }
+    
+    .btn {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+    }
+    
+    .btn-primary {
+        background: #2196F3;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #1976D2;
+    }
+    
+    .btn-primary:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+    
+    .file-list {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: white;
+        border-radius: 4px;
+        border: 1px solid #ddd;
+    }
+    
+    .file-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .file-item:last-child {
+        border-bottom: none;
+    }
+    
+    .file-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    
+    .file-size {
+        color: #666;
+        margin-left: 1rem;
+        font-size: 0.9rem;
+    }
+    
+    .remove-file {
+        color: #dc3545;
+        cursor: pointer;
+        margin-left: 1rem;
+        font-weight: bold;
+    }
+    
+    .progress-bar {
+        width: 100%;
+        height: 30px;
+        background: #f0f0f0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 1rem;
+        display: none;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background: #2196F3;
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+    }
+    
+    .collapsible {
+        background-color: #f1f1f1;
+        color: #444;
+        cursor: pointer;
+        padding: 1rem;
+        width: 100%;
+        border: none;
+        text-align: left;
+        outline: none;
+        font-size: 1.1rem;
+        font-weight: bold;
+        border-radius: 4px;
+        margin-top: 2rem;
+        transition: background-color 0.3s ease;
+    }
+    
+    .collapsible:hover {
+        background-color: #ddd;
+    }
+    
+    .collapsible:after {
+        content: '\002B';
+        color: #777;
+        font-weight: bold;
+        float: right;
+        margin-left: 5px;
+    }
+    
+    .collapsible.active:after {
+        content: "\2212";
+    }
+    
+    .collapsible-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+        background-color: #f9f9f9;
+        border-radius: 0 0 4px 4px;
+    }
+    
+    .collapsible-content-inner {
+        padding: 1rem;
+    }
+    
+    .result-item {
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        border-radius: 4px;
+        border-left: 4px solid #ccc;
+    }
+    
+    .result-item.success {
+        background: #d4edda;
+        border-left-color: #28a745;
+    }
+    
+    .result-item.error {
+        background: #f8d7da;
+        border-left-color: #dc3545;
+    }
+    
+    .result-item.duplicate {
+        background: #fff3cd;
+        border-left-color: #ffc107;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="card">
-    <h2>Ingest PowerPoint Files</h2>
+    <h2>📤 Ingest PowerPoint Files</h2>
     
     <div class="info-box">
-        <strong>💡 Note:</strong> The slidex CLI command requires activating the virtual environment first.
+        <strong>💡 Web Upload:</strong> Drag and drop files or click to browse. Supports multiple .pptx files.
     </div>
     
-    <h3>Using the CLI</h3>
-    <p>In your terminal, activate the virtual environment and use the CLI:</p>
-    <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+    <!-- Upload Area -->
+    <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">📁</div>
+        <h3>Drag & Drop Files Here</h3>
+        <p>or click to browse</p>
+        <p style="color: #666; font-size: 0.9rem;">Supports .pptx files only</p>
+        <input type="file" id="fileInput" class="file-input" multiple accept=".pptx">
+    </div>
+    
+    <!-- File List -->
+    <div id="fileListContainer" style="display: none;">
+        <h3>Selected Files</h3>
+        <div class="file-list" id="fileList"></div>
+        
+        <div style="margin-top: 1rem;">
+            <label for="uploaderName" style="display: block; margin-bottom: 0.5rem;">Uploader Name (optional):</label>
+            <input type="text" id="uploaderName" placeholder="Enter your name" style="padding: 0.5rem; width: 100%; max-width: 300px; border: 1px solid #ddd; border-radius: 4px;">
+        </div>
+        
+        <button class="btn btn-primary" id="uploadBtn" style="margin-top: 1rem;">
+            Upload & Ingest Files
+        </button>
+        <button class="btn" id="clearBtn" style="margin-top: 1rem; margin-left: 0.5rem; background: #6c757d; color: white;">
+            Clear All
+        </button>
+    </div>
+    
+    <!-- Progress Bar -->
+    <div class="progress-bar" id="progressBar">
+        <div class="progress-fill" id="progressFill">0%</div>
+    </div>
+    
+    <!-- Results -->
+    <div id="resultsContainer" style="display: none; margin-top: 1.5rem;">
+        <h3>Upload Results</h3>
+        <div id="results"></div>
+    </div>
+    
+    <!-- Collapsible CLI Instructions -->
+    <button type="button" class="collapsible">🖥️ CLI & API Instructions (Click to expand)</button>
+    <div class="collapsible-content">
+        <div class="collapsible-content-inner">
+            <div class="warning-box">
+                <strong>⚠️ Note:</strong> The slidex CLI command requires activating the virtual environment first.
+            </div>
+            
+            <h3>Using the CLI</h3>
+            <p>In your terminal, activate the virtual environment and use the CLI:</p>
+            <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
 # First, activate the virtual environment
 source .venv/bin/activate
 
@@ -43,30 +284,221 @@ slidex ingest folder /path/to/folder --recursive
 
 # Ingest a folder (non-recursive)
 slidex ingest folder /path/to/folder --no-recursive
-    </pre>
-    
-    <h3 style="margin-top: 2rem;">Using the API</h3>
-    <p>You can also use the REST API directly:</p>
-    <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+            </pre>
+            
+            <h3 style="margin-top: 2rem;">Using the API</h3>
+            <p>You can also use the REST API directly:</p>
+            <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
 # Ingest file via API
-curl -X POST http://localhost:5000/api/ingest/file \\
-  -H "Content-Type: application/json" \\
+curl -X POST http://localhost:5000/api/ingest/file \
+  -H "Content-Type: application/json" \
   -d '{"path": "/path/to/file.pptx"}'
 
 # Ingest folder via API
-curl -X POST http://localhost:5000/api/ingest/folder \\
-  -H "Content-Type: application/json" \\
+curl -X POST http://localhost:5000/api/ingest/folder \
+  -H "Content-Type: application/json" \
   -d '{"path": "/path/to/folder", "recursive": true}'
-    </pre>
-    
-    <h3 style="margin-top: 2rem;">Using Python Directly</h3>
-    <p>If you're in the project directory:</p>
-    <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
+            </pre>
+            
+            <h3 style="margin-top: 2rem;">Using Python Directly</h3>
+            <p>If you're in the project directory:</p>
+            <pre style="background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto;">
 # Activate virtual environment
 source .venv/bin/activate
 
 # Use Python directly
 python -c "from slidex.core.ingest import ingest_engine; ingest_engine.ingest_file('/path/to/file.pptx')"
-    </pre>
+            </pre>
+        </div>
+    </div>
 </div>
+
+<script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileListContainer = document.getElementById('fileListContainer');
+    const fileList = document.getElementById('fileList');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const progressBar = document.getElementById('progressBar');
+    const progressFill = document.getElementById('progressFill');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const results = document.getElementById('results');
+    const uploaderName = document.getElementById('uploaderName');
+    
+    let selectedFiles = [];
+    
+    // Click to browse
+    uploadArea.addEventListener('click', () => {
+        fileInput.click();
+    });
+    
+    // File selection
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+    });
+    
+    // Drag and drop
+    uploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+    
+    uploadArea.addEventListener('dragleave', () => {
+        uploadArea.classList.remove('dragover');
+    });
+    
+    uploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+    
+    function handleFiles(files) {
+        const pptxFiles = Array.from(files).filter(file => 
+            file.name.toLowerCase().endsWith('.pptx')
+        );
+        
+        if (pptxFiles.length === 0) {
+            alert('Please select .pptx files only');
+            return;
+        }
+        
+        selectedFiles = [...selectedFiles, ...pptxFiles];
+        updateFileList();
+    }
+    
+    function updateFileList() {
+        if (selectedFiles.length === 0) {
+            fileListContainer.style.display = 'none';
+            return;
+        }
+        
+        fileListContainer.style.display = 'block';
+        fileList.innerHTML = '';
+        
+        selectedFiles.forEach((file, index) => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.innerHTML = `
+                <span class="file-name">${file.name}</span>
+                <span class="file-size">${formatFileSize(file.size)}</span>
+                <span class="remove-file" onclick="removeFile(${index})">✕</span>
+            `;
+            fileList.appendChild(fileItem);
+        });
+    }
+    
+    function removeFile(index) {
+        selectedFiles.splice(index, 1);
+        updateFileList();
+    }
+    
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    
+    clearBtn.addEventListener('click', () => {
+        selectedFiles = [];
+        fileInput.value = '';
+        updateFileList();
+        resultsContainer.style.display = 'none';
+    });
+    
+    uploadBtn.addEventListener('click', async () => {
+        if (selectedFiles.length === 0) {
+            alert('Please select files to upload');
+            return;
+        }
+        
+        uploadBtn.disabled = true;
+        clearBtn.disabled = true;
+        progressBar.style.display = 'block';
+        resultsContainer.style.display = 'none';
+        
+        const formData = new FormData();
+        selectedFiles.forEach(file => {
+            formData.append('files', file);
+        });
+        
+        if (uploaderName.value.trim()) {
+            formData.append('uploader', uploaderName.value.trim());
+        }
+        
+        try {
+            const response = await fetch('/api/ingest/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            progressBar.style.display = 'none';
+            displayResults(data);
+            
+            // Clear files on success
+            if (data.success) {
+                selectedFiles = [];
+                fileInput.value = '';
+                updateFileList();
+            }
+            
+        } catch (error) {
+            progressBar.style.display = 'none';
+            alert('Upload failed: ' + error.message);
+        } finally {
+            uploadBtn.disabled = false;
+            clearBtn.disabled = false;
+        }
+    });
+    
+    function displayResults(data) {
+        resultsContainer.style.display = 'block';
+        results.innerHTML = '';
+        
+        const summary = document.createElement('div');
+        summary.className = data.success ? 'success-box' : 'error-box';
+        summary.innerHTML = `<strong>${data.message}</strong>`;
+        results.appendChild(summary);
+        
+        if (data.results && data.results.length > 0) {
+            data.results.forEach(result => {
+                const resultItem = document.createElement('div');
+                let className = 'result-item ';
+                if (result.success) {
+                    className += 'success';
+                } else if (result.message.includes('duplicate')) {
+                    className += 'duplicate';
+                } else {
+                    className += 'error';
+                }
+                resultItem.className = className;
+                
+                const icon = result.success ? '✓' : '✗';
+                resultItem.innerHTML = `
+                    <strong>${icon} ${result.filename}</strong><br>
+                    <small>${result.message}</small>
+                    ${result.deck_id ? `<br><small>Deck ID: ${result.deck_id}</small>` : ''}
+                `;
+                results.appendChild(resultItem);
+            });
+        }
+    }
+    
+    // Collapsible functionality
+    const collapsibles = document.getElementsByClassName('collapsible');
+    for (let i = 0; i < collapsibles.length; i++) {
+        collapsibles[i].addEventListener('click', function() {
+            this.classList.toggle('active');
+            const content = this.nextElementSibling;
+            if (content.style.maxHeight) {
+                content.style.maxHeight = null;
+            } else {
+                content.style.maxHeight = content.scrollHeight + 'px';
+            }
+        });
+    }
+</script>
 {% endblock %}

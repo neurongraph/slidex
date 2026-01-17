@@ -289,12 +289,56 @@ class LightRAGClient:
             logger.error(f"Error inserting document {document_id}: {e}")
             raise
     
+    async def insert_documents_batch_async(
+        self,
+        documents: List[Dict[str, Any]]
+    ) -> None:
+        """
+        Insert multiple documents in batch (async version).
+        
+        Args:
+            documents: List of dicts with 'text', 'id', and optional 'metadata' keys
+        """
+        if not self._initialized:
+            # Initialize asynchronously if not already done
+            await self._initialize_async()
+        
+        texts = []
+        ids = []
+        
+        for doc in documents:
+            text = doc['text']
+            doc_id = doc['id']
+            metadata = doc.get('metadata')
+            
+            # Prepare document with metadata
+            if metadata:
+                meta_str = " | ".join([f"{k}: {v}" for k, v in metadata.items()])
+                text = f"[{meta_str}]\n{text}"
+            
+            # Add explicit slide ID marker for reliable extraction
+            text = f"[SLIDE_ID:{doc_id}]\n{text}"
+            
+            texts.append(text)
+            ids.append(doc_id)
+        
+        logger.info(f"Batch inserting {len(documents)} documents into LightRAG")
+        
+        try:
+            # Use ainsert (async version) instead of insert
+            await self.rag.ainsert(texts, ids=ids)
+            logger.info(f"Batch insert complete: {len(documents)} documents")
+        except Exception as e:
+            logger.error(f"Error in batch insert: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
+    
     def insert_documents_batch(
         self,
         documents: List[Dict[str, Any]]
     ) -> None:
         """
-        Insert multiple documents in batch.
+        Insert multiple documents in batch (sync wrapper).
         
         Args:
             documents: List of dicts with 'text', 'id', and optional 'metadata' keys
@@ -324,10 +368,24 @@ class LightRAGClient:
         logger.info(f"Batch inserting {len(documents)} documents into LightRAG")
         
         try:
-            self.rag.insert(texts, ids=ids)
+            # Check if we're in an async context
+            try:
+                loop = asyncio.get_running_loop()
+                # We're in an async context, need to run in executor
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(
+                        lambda: asyncio.run(self.rag.ainsert(texts, ids=ids))
+                    )
+                    future.result(timeout=300)  # 5 minute timeout
+            except RuntimeError:
+                # No running loop, we can use asyncio.run directly
+                asyncio.run(self.rag.ainsert(texts, ids=ids))
+            
             logger.info(f"Batch insert complete: {len(documents)} documents")
         except Exception as e:
             logger.error(f"Error in batch insert: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             raise
     
     def query(
