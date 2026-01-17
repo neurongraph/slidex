@@ -202,7 +202,7 @@ just clean-all    # Deep clean (remove venv, storage, .env)
 just logs         # View application logs
 just audit-logs   # View LLM audit logs
 just db-stats     # Show database statistics
-just clean-data   # Clean all data (database, FAISS, LightRAG)
+just clean-data   # Clean all data (database and LightRAG)
 ```
 
 ## How It Works
@@ -262,7 +262,6 @@ slidex/
 │   │   ├── ollama_client.py  # Ollama integration
 │   │   ├── lightrag_client.py # LightRAG wrapper
 │   │   ├── slide_processor.py # Text extraction & thumbnails
-│   │   ├── vector_index.py   # FAISS index (legacy)
 │   │   ├── ingest.py         # Ingestion engine
 │   │   ├── search.py         # Search engine
 │   │   ├── assembler.py      # Presentation assembly
@@ -339,7 +338,7 @@ just enable-pdf
 If you're upgrading from a previous version or want to start with a clean slate:
 
 ```bash
-# Clean all existing data (database, FAISS, LightRAG)
+# Clean all existing data (database and LightRAG)
 just clean-data
 
 # Re-initialize database

@@ -35,6 +35,8 @@ class LightRAGClient:
         """Initialize LightRAG client."""
         self.rag = None
         self._initialized = False
+        self._event_loop = None
+        self._loop_thread = None
     async def _initialize_async(self) -> None:
         """Async initialization of LightRAG."""
         if self._initialized:
@@ -209,48 +211,44 @@ class LightRAGClient:
     def initialize(self) -> None:
         """Synchronous wrapper for initialization."""
         if not self._initialized:
-            # Add timeout to prevent hanging during initialization
-            try:
-                import asyncio
-                import threading
-                import time
-                
-                # Check if we're already in an event loop
+            # Create a dedicated event loop in a background thread for LightRAG
+            # This ensures all LightRAG operations use the same event loop
+            import threading
+            import queue
+            
+            result_queue = queue.Queue()
+            
+            def run_event_loop():
+                """Run event loop in background thread."""
                 try:
-                    loop = asyncio.get_event_loop()
-                    # If we're in an event loop, we can't create a new one
-                    # Instead, we'll run the async initialization in a thread
-                    def run_async_init():
-                        try:
-                            asyncio.run(self._initialize_async())
-                        except Exception as e:
-                            logger.error(f"Failed to initialize LightRAG in thread: {e}")
-                            raise
-                    
-                    # Run in a separate thread to avoid nested event loop issues
-                    thread = threading.Thread(target=run_async_init)
-                    thread.start()
-                    thread.join(timeout=60.0)  # 60 second timeout
-                    
-                    if thread.is_alive():
-                        logger.error("LightRAG initialization timed out (thread still running)")
-                        raise TimeoutError("LightRAG initialization timed out")
-                        
-                except RuntimeError:
-                    # No event loop running, create a new one
+                    # Create new event loop for this thread
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
-                    try:
-                        loop.run_until_complete(asyncio.wait_for(self._initialize_async(), timeout=60.0))
-                    finally:
-                        loop.close()
-            except asyncio.TimeoutError:
+                    self._event_loop = loop
+                    
+                    # Initialize LightRAG
+                    loop.run_until_complete(self._initialize_async())
+                    result_queue.put(("success", None))
+                    
+                    # Keep the loop running for future operations
+                    loop.run_forever()
+                except Exception as e:
+                    logger.error(f"Failed to initialize LightRAG: {e}")
+                    logger.error(f"Traceback: {traceback.format_exc()}")
+                    result_queue.put(("error", e))
+            
+            # Start background thread
+            self._loop_thread = threading.Thread(target=run_event_loop, daemon=True)
+            self._loop_thread.start()
+            
+            # Wait for initialization to complete
+            try:
+                status, error = result_queue.get(timeout=60.0)
+                if status == "error":
+                    raise error
+            except queue.Empty:
                 logger.error("LightRAG initialization timed out")
-                raise
-            except Exception as e:
-                logger.error(f"Failed to initialize LightRAG: {e}")
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                raise
+                raise TimeoutError("LightRAG initialization timed out")
     
     def insert_document(
         self,
@@ -368,20 +366,17 @@ class LightRAGClient:
         logger.info(f"Batch inserting {len(documents)} documents into LightRAG")
         
         try:
-            # Check if we're in an async context
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in an async context, need to run in executor
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(
-                        lambda: asyncio.run(self.rag.ainsert(texts, ids=ids))
-                    )
-                    future.result(timeout=300)  # 5 minute timeout
-            except RuntimeError:
-                # No running loop, we can use asyncio.run directly
-                asyncio.run(self.rag.ainsert(texts, ids=ids))
+            # Use the dedicated event loop from initialization
+            if self._event_loop is None:
+                raise RuntimeError("LightRAG not initialized")
             
+            # Schedule the coroutine on the dedicated event loop
+            future = asyncio.run_coroutine_threadsafe(
+                self.rag.ainsert(texts, ids=ids),
+                self._event_loop
+            )
+            # Wait for completion with timeout
+            future.result(timeout=300)  # 5 minute timeout
             logger.info(f"Batch insert complete: {len(documents)} documents")
         except Exception as e:
             logger.error(f"Error in batch insert: {e}")

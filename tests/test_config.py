@@ -38,7 +38,6 @@ def test_settings_paths():
     
     # Test that paths are Path objects
     assert isinstance(settings.storage_root, Path)
-    assert isinstance(settings.faiss_index_path, Path)
     assert isinstance(settings.audit_db_path, Path)
 
 
@@ -53,5 +52,4 @@ def test_settings_ensure_directories(tmp_path):
     assert settings.thumbnails_dir.exists()
     assert settings.slides_dir.exists()
     assert settings.exports_dir.exists()
-    assert settings.faiss_index_path.parent.exists()
     assert settings.audit_db_path.parent.exists()

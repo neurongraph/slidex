@@ -179,17 +179,6 @@ class Database:
             logger.debug(f"Slide inserted: {slide_id} (deck: {deck_id}, index: {slide_index})")
     
     @staticmethod
-    def insert_faiss_mapping(slide_id: str, vector_id: int) -> None:
-        """Insert mapping between slide_id and FAISS vector_id."""
-        with get_db_connection() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO faiss_index (slide_id, vector_id) VALUES (%s, %s)",
-                (slide_id, vector_id)
-            )
-            logger.debug(f"FAISS mapping inserted: slide={slide_id}, vector_id={vector_id}")
-    
-    @staticmethod
     def get_slide_by_id(slide_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve slide by ID."""
         with get_db_connection() as conn:
@@ -205,24 +194,6 @@ class Database:
             )
             result = cur.fetchone()
             return dict(result) if result else None
-    
-    @staticmethod
-    def get_slides_by_vector_ids(vector_ids: List[int]) -> List[Dict[str, Any]]:
-        """Get slides corresponding to FAISS vector IDs."""
-        with get_db_connection() as conn:
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute(
-                """
-                SELECT s.*, d.filename as deck_filename, d.original_path as deck_path,
-                       f.vector_id
-                FROM slides s
-                JOIN decks d ON s.deck_id = d.deck_id
-                JOIN faiss_index f ON s.slide_id = f.slide_id
-                WHERE f.vector_id = ANY(%s)
-                """,
-                (vector_ids,)
-            )
-            results = cur.fetchall()
             return [dict(row) for row in results]
     
     @staticmethod

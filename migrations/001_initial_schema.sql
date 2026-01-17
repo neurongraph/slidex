@@ -1,5 +1,5 @@
 -- Slidex Database Schema - Initial Migration
--- Creates tables for decks, slides, and FAISS index mapping
+-- Creates tables for decks and slides
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -33,21 +33,11 @@ CREATE TABLE IF NOT EXISTS slides (
     UNIQUE(deck_id, slide_index)
 );
 
--- FAISS index mapping table: maps slide IDs to FAISS vector IDs
-CREATE TABLE IF NOT EXISTS faiss_index (
-    id SERIAL PRIMARY KEY,
-    slide_id UUID NOT NULL REFERENCES slides(slide_id) ON DELETE CASCADE,
-    vector_id INTEGER NOT NULL UNIQUE,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_decks_file_hash ON decks(file_hash);
 CREATE INDEX IF NOT EXISTS idx_decks_uploaded_at ON decks(uploaded_at);
 CREATE INDEX IF NOT EXISTS idx_slides_deck_id ON slides(deck_id);
 CREATE INDEX IF NOT EXISTS idx_slides_slide_index ON slides(slide_index);
-CREATE INDEX IF NOT EXISTS idx_faiss_index_slide_id ON faiss_index(slide_id);
-CREATE INDEX IF NOT EXISTS idx_faiss_index_vector_id ON faiss_index(vector_id);
 
 -- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()

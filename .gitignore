@@ -54,8 +54,6 @@ storage/thumbnails/
 storage/exports/
 storage/logs/
 storage/audit.db
-storage/faiss_index.bin
-storage/faiss_index.metadata
 
 # Configuration
 .env

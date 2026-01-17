@@ -42,14 +42,6 @@ CREATE TABLE IF NOT EXISTS slides (
     UNIQUE(deck_id, slide_index)
 );
 
--- FAISS index mapping table: maps slide IDs to FAISS vector IDs
-CREATE TABLE IF NOT EXISTS faiss_index (
-    id SERIAL PRIMARY KEY,
-    slide_id UUID NOT NULL REFERENCES slides(slide_id) ON DELETE CASCADE,
-    vector_id INTEGER NOT NULL UNIQUE,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
 -- ============================================================================
 -- INDEXES
 -- ============================================================================
@@ -65,10 +57,6 @@ CREATE INDEX IF NOT EXISTS idx_slides_slide_file_path ON slides(slide_file_path)
 CREATE INDEX IF NOT EXISTS idx_slides_slide_pdf_path ON slides(slide_pdf_path);
 CREATE INDEX IF NOT EXISTS idx_slides_requires_pdf ON slides(requires_pdf);
 CREATE INDEX IF NOT EXISTS idx_slides_complexity_score ON slides(complexity_score);
-
--- FAISS index table indexes
-CREATE INDEX IF NOT EXISTS idx_faiss_index_slide_id ON faiss_index(slide_id);
-CREATE INDEX IF NOT EXISTS idx_faiss_index_vector_id ON faiss_index(vector_id);
 
 -- ============================================================================
 -- FUNCTIONS AND TRIGGERS
@@ -99,7 +87,6 @@ CREATE TRIGGER update_slides_updated_at BEFORE UPDATE ON slides
 -- Table comments
 COMMENT ON TABLE decks IS 'Stores metadata about ingested PowerPoint presentations';
 COMMENT ON TABLE slides IS 'Stores metadata for individual slides extracted from presentations';
-COMMENT ON TABLE faiss_index IS 'Maps slide IDs to FAISS vector IDs for semantic search';
 
 -- Column comments
 COMMENT ON COLUMN slides.slide_file_path IS 'Path to individual slide .pptx file for standalone access';

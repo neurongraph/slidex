@@ -8,11 +8,7 @@ default:
 setup:
     ./scripts/setup.sh
 
-# Sync dependencies using uv
-sync:
-    uv sync
-
-# Install dependencies (alias for sync)
+# Install/sync dependencies using uv
 install:
     uv sync
 
@@ -126,26 +122,24 @@ check:
         echo "⚠️  Virtual environment not found"
     fi
 
-# Clean generated files
+# Clean generated files and caches
 clean:
     rm -rf storage/thumbnails/* storage/exports/*
     rm -rf __pycache__ **/__pycache__ .pytest_cache
     find . -type d -name "*.egg-info" -exec rm -rf {} + || true
 
-# Deep clean (including virtual environment and storage)
+# Deep clean (including virtual environment, storage, and lock files)
 clean-all: clean
-    rm -rf .venv
-    rm -rf storage/
-    rm -f .env
-    rm -f uv.lock
+    rm -rf .venv storage/
+    rm -f .env uv.lock
 
-# Format code
+# Format code with black
 format:
-    black slidex/ tests/
+    uv run black slidex/ tests/
 
-# Lint code
+# Lint code with ruff
 lint:
-    ruff check slidex/ tests/
+    uv run ruff check slidex/ tests/
 
 # View application logs
 logs:
@@ -161,40 +155,28 @@ db-stats:
     @echo "Database statistics:"
     @uv run python -c "from slidex.core.database import db; decks = db.get_all_decks(); print(f'Total decks: {len(decks)}')" || echo "Error connecting to database"
 
-# Show FAISS index stats
-index-stats:
-    @echo "FAISS index statistics:"
-    @uv run python -c "from slidex.core.vector_index import vector_index; print(vector_index.get_stats())" || echo "Error loading index"
-
 # Show LightRAG index stats
 lightrag-stats:
     @echo "LightRAG index statistics:"
     @uv run python -c "from slidex.core.lightrag_client import lightrag_client; import json; print(json.dumps(lightrag_client.get_stats(), indent=2))" || echo "Error loading LightRAG"
 
-# Rebuild FAISS index from database
-rebuild-index:
-    uv run python scripts/rebuild_index.py
-
-# Clean all data from database, FAISS index, and LightRAG (keeps schema)
-clean-data:
-    uv run python scripts/clean_data.py
-    @echo "Cleaning LightRAG storage..."
+# Clean all data from database and LightRAG (keeps schema)
+clean-data FORCE="":
+    #!/usr/bin/env bash
+    if [ "{{FORCE}}" = "--yes" ]; then
+        uv run python scripts/clean_data.py --yes
+    else
+        uv run python scripts/clean_data.py
+    fi
+    echo "Cleaning LightRAG storage..."
     rm -rf storage/lightrag/*
-    @echo "✓ LightRAG storage cleaned"
+    echo "✓ LightRAG storage cleaned"
 
-# Clean all data without confirmation prompt (dangerous!)
-clean-data-force:
-    uv run python scripts/clean_data.py --yes
-
-# Commit and push changes to remote repository
-push MESSAGE BRANCH="main":
+# Commit and push changes (optionally with tags)
+push MESSAGE BRANCH="main" TAGS="":
     git add .
     git commit -m "{{MESSAGE}}"
-    git push origin {{BRANCH}}
-
-# Push with tags
-push-tags:
-    git push --tags
+    git push origin {{BRANCH}} {{TAGS}}
 
 # Create and push a new release tag
 release VERSION:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Clean all data from the database and FAISS index.
-This removes all decks, slides, and vectors but keeps the schema intact.
+Clean all data from the database and LightRAG storage.
+This removes all decks, slides, and graph data but keeps the schema intact.
 """
 
 import sys
@@ -13,19 +13,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from slidex.config import settings
 from slidex.logging_config import logger
 from slidex.core.database import get_db_connection
-from slidex.core.vector_index import vector_index
 import shutil
 
 
 def clean_data(confirm: bool = False):
-    """Clean all data from database and FAISS index."""
+    """Clean all data from database and LightRAG storage."""
     
     if not confirm:
         print("⚠️  WARNING: This will delete ALL data!")
         print("  - All decks and slides from PostgreSQL")
-        print("  - All vectors from FAISS index")
+        print("  - All LightRAG graph data")
         print("  - All thumbnails")
-        print("  - All individual slide files")
+        print("  - All individual slide files (PPTX and PDF)")
         print("  - LLM audit logs")
         print()
         response = input("Are you sure you want to continue? (yes/no): ")
@@ -45,22 +44,15 @@ def clean_data(confirm: bool = False):
             print("\n📊 Cleaning PostgreSQL database...")
             
             # Get counts before deletion
-            cur.execute("SELECT COUNT(*) FROM faiss_index")
-            faiss_mappings = cur.fetchone()[0]
-            
             cur.execute("SELECT COUNT(*) FROM slides")
             slides_count = cur.fetchone()[0]
             
             cur.execute("SELECT COUNT(*) FROM decks")
             decks_count = cur.fetchone()[0]
             
-            print(f"  Found: {decks_count} decks, {slides_count} slides, {faiss_mappings} vector mappings")
+            print(f"  Found: {decks_count} decks, {slides_count} slides")
             
             # Delete data (cascades will handle related records)
-            logger.info("Deleting FAISS index mappings...")
-            cur.execute("DELETE FROM faiss_index")
-            print("  ✓ Deleted FAISS index mappings")
-            
             logger.info("Deleting slides...")
             cur.execute("DELETE FROM slides")
             print("  ✓ Deleted slides")
@@ -69,19 +61,17 @@ def clean_data(confirm: bool = False):
             cur.execute("DELETE FROM decks")
             print("  ✓ Deleted decks")
             
-            # Reset sequences
-            logger.info("Resetting sequences...")
-            cur.execute("ALTER SEQUENCE IF EXISTS faiss_index_id_seq RESTART WITH 1")
-            
             conn.commit()
             cur.close()
         
-        # Clean FAISS index
-        logger.info("Cleaning FAISS index...")
-        print("\n🔍 Cleaning FAISS index...")
-        vector_index._create_new_index()
-        vector_index.save()
-        print("  ✓ FAISS index cleared and saved")
+        # Clean LightRAG storage
+        logger.info("Cleaning LightRAG storage...")
+        print("\n🔍 Cleaning LightRAG storage...")
+        lightrag_dir = settings.lightrag_working_dir
+        if lightrag_dir.exists():
+            shutil.rmtree(lightrag_dir)
+            lightrag_dir.mkdir(parents=True, exist_ok=True)
+            print(f"  ✓ LightRAG storage cleared: {lightrag_dir}")
         
         # Clean thumbnails
         logger.info("Cleaning thumbnails...")
@@ -94,9 +84,9 @@ def clean_data(confirm: bool = False):
                     shutil.rmtree(item)
             print(f"  ✓ Deleted thumbnails from {thumbnails_dir}")
         
-        # Clean individual slide files
+        # Clean individual slide files (PPTX)
         logger.info("Cleaning individual slide files...")
-        print("\n📄 Cleaning individual slide files...")
+        print("\n📄 Cleaning individual slide files (PPTX)...")
         slides_dir = settings.slides_dir
         if slides_dir.exists():
             # Delete all files and subdirectories
@@ -109,6 +99,22 @@ def clean_data(confirm: bool = False):
                     item.unlink()
                     deleted_count += 1
             print(f"  ✓ Deleted {deleted_count} individual slide files from {slides_dir}")
+        
+        # Clean individual slide files (PDF)
+        logger.info("Cleaning individual slide PDF files...")
+        print("\n📄 Cleaning individual slide files (PDF)...")
+        slides_pdf_dir = settings.slides_pdf_dir
+        if slides_pdf_dir.exists():
+            # Delete all files and subdirectories
+            deleted_count = 0
+            for item in slides_pdf_dir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                    deleted_count += 1
+                elif item.is_file():
+                    item.unlink()
+                    deleted_count += 1
+            print(f"  ✓ Deleted {deleted_count} individual slide PDF files from {slides_pdf_dir}")
         
         # Clean audit logs (optional - keeping LLM audit trail)
         # Uncomment if you want to delete audit logs too

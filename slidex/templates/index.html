@@ -9,6 +9,119 @@
         margin-bottom: 2rem;
     }
     
+    .search-input-group {
+        display: flex;
+        gap: 1rem;
+        align-items: stretch;
+    }
+    
+    .search-input-group input[type="text"] {
+        flex: 1;
+        font-size: 1.1rem;
+        padding: 1rem 1.5rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        transition: border-color 0.3s ease;
+    }
+    
+    .search-input-group input[type="text"]:focus {
+        border-color: #667eea;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .search-button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        cursor: pointer;
+        padding: 1rem 1.5rem;
+        font-size: 1.2rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 60px;
+    }
+    
+    .search-button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    
+    .search-button:active:not(:disabled) {
+        transform: translateY(0);
+    }
+    
+    .search-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    
+    .search-loading {
+        display: none;
+        text-align: center;
+        padding: 2rem;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 8px;
+        color: white;
+        margin: 1rem 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    
+    .search-loading.active {
+        display: block;
+        animation: pulse 2s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+    }
+    
+    .search-loading-spinner {
+        display: inline-block;
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(255,255,255,0.3);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 1rem;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    .search-loading-text {
+        font-size: 1.1rem;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+    }
+    
+    .search-loading-subtext {
+        font-size: 0.9rem;
+        opacity: 0.9;
+    }
+    
+    .search-loading-dots {
+        display: inline-block;
+    }
+    
+    .search-loading-dots::after {
+        content: '';
+        animation: dots 1.5s steps(4, end) infinite;
+    }
+    
+    @keyframes dots {
+        0%, 20% { content: ''; }
+        40% { content: '.'; }
+        60% { content: '..'; }
+        80%, 100% { content: '...'; }
+    }
+    
     .lightrag-answer {
         background: #f8fafc;
         border-left: 4px solid #3b82f6;
@@ -143,11 +256,51 @@
     .search-input-group {
         display: flex;
         gap: 1rem;
-        margin-bottom: 1rem;
+        align-items: stretch;
     }
     
-    .search-input-group input {
+    .search-input-group input[type="text"] {
         flex: 1;
+        font-size: 1.1rem;
+        padding: 1rem 1.5rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        transition: border-color 0.3s ease;
+    }
+    
+    .search-input-group input[type="text"]:focus {
+        border-color: #667eea;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .search-button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 8px;
+        color: white;
+        cursor: pointer;
+        padding: 1rem 1.5rem;
+        font-size: 1.2rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 60px;
+    }
+    
+    .search-button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    
+    .search-button:active:not(:disabled) {
+        transform: translateY(0);
+    }
+    
+    .search-button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
     }
     
     .results-section {
@@ -198,7 +351,7 @@
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         padding: 1.5rem;
         display: grid;
-        grid-template-columns: 200px 1fr auto;
+        grid-template-columns: 266px 1fr auto;
         gap: 1.5rem;
         align-items: start;
     }
@@ -260,26 +413,33 @@
 
 {% block content %}
 <div class="card">
-    <h2>Search Slides</h2>
+    <h2>Ask Slidex</h2>
     <form class="search-form" id="searchForm">
         <div class="search-input-group">
-            <input 
-                type="text" 
-                id="searchQuery" 
-                placeholder="Enter search query..." 
+            <input
+                type="text"
+                id="searchQuery"
+                placeholder="Ask me anything about your slides..."
                 required
             >
-            <input 
-                type="number" 
-                id="topK" 
-                value="10" 
-                min="1" 
-                max="50" 
-                style="width: 100px;"
-            >
-            <button type="submit">Search</button>
+            <button type="submit" id="searchButton" class="search-button" title="Search">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <path d="m21 21-4.35-4.35"></path>
+                </svg>
+            </button>
         </div>
     </form>
+    
+    <div id="searchLoading" class="search-loading">
+        <div class="search-loading-spinner"></div>
+        <div class="search-loading-text">
+            Searching knowledge graph<span class="search-loading-dots"></span>
+        </div>
+        <div class="search-loading-subtext">
+            Analyzing slides and generating insights
+        </div>
+    </div>
     
     <div id="lightragResponse" style="margin-top: 1rem; display: none;"></div>
 
@@ -314,29 +474,65 @@
         e.preventDefault();
         
         const query = document.getElementById('searchQuery').value;
-        const topK = parseInt(document.getElementById('topK').value);
         
         const resultsDiv = document.getElementById('results');
-        resultsDiv.innerHTML = '<div class="loading">Searching...</div>';
+        const searchLoading = document.getElementById('searchLoading');
+        const searchButton = document.getElementById('searchButton');
+        const lightragDiv = document.getElementById('lightragResponse');
+        const resultsSection = document.getElementById('resultsSection');
+        
+        // Show loading indicator and disable button
+        searchLoading.classList.add('active');
+        searchButton.disabled = true;
+        searchButton.style.opacity = '0.6';
+        
+        // Hide previous results
+        resultsDiv.innerHTML = '';
+        lightragDiv.style.display = 'none';
+        resultsSection.style.display = 'none';
         
         try {
             const response = await fetch('/api/search', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ query, top_k: topK })
+                body: JSON.stringify({ query })
             });
             
             const data = await response.json();
+            
+            // Hide loading indicator and re-enable button
+            searchLoading.classList.remove('active');
+            searchButton.disabled = false;
+            searchButton.style.opacity = '1';
             
             if (data.success) {
                 displayResults(data.results, data.response);
             } else {
                 resultsDiv.innerHTML = '<div class="alert alert-error">Error: ' + (data.error || 'Unknown error') + '</div>';
+                resultsSection.style.display = 'block';
             }
         } catch (error) {
+            // Hide loading indicator and re-enable button on error
+            searchLoading.classList.remove('active');
+            searchButton.disabled = false;
+            searchButton.style.opacity = '1';
+            
             resultsDiv.innerHTML = '<div class="alert alert-error">Error: ' + error.message + '</div>';
+            resultsSection.style.display = 'block';
         }
     });
+    
+    function cleanFilename(filename) {
+        // Remove UUID/hash prefix from filename if present
+        // Pattern 1: Standard UUID (8-4-4-4-12 hex digits) followed by underscore or hyphen
+        // Pattern 2: 32-character hex hash followed by underscore or hyphen
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[-_]/i;
+        const hashPattern = /^[0-9a-f]{32}[-_]/i;
+        
+        let cleaned = filename.replace(uuidPattern, '');
+        cleaned = cleaned.replace(hashPattern, '');
+        return cleaned;
+    }
     
     function displayResults(results, lightragResponse) {
         const resultsDiv = document.getElementById('results');
@@ -378,6 +574,7 @@
         let html = '<div class="results">';
         
         for (const result of results) {
+            const cleanedFilename = cleanFilename(result.deck_filename);
             html += `
                 <div class="result-card">
                     <div class="result-thumbnail">
@@ -386,7 +583,7 @@
                     <div class="result-content">
                         <h3>${result.title_header || '[No title]'}</h3>
                         <div class="result-meta">
-                            ${result.deck_filename} • Slide ${result.slide_index + 1} • 
+                            ${cleanedFilename} • Slide ${result.slide_index + 1} •
                             <span class="result-score">Score: ${result.score.toFixed(3)}</span>
                         </div>
                         <div class="result-summary">${result.summary}</div>
@@ -394,9 +591,9 @@
                     </div>
                     <div class="result-actions">
                         <div class="checkbox-wrapper">
-                            <input 
-                                type="checkbox" 
-                                id="slide_${result.slide_id}" 
+                            <input
+                                type="checkbox"
+                                id="slide_${result.slide_id}"
                                 onchange="toggleSlide('${result.slide_id}')"
                                 ${selectedSlides.has(result.slide_id) ? 'checked' : ''}
                             >

@@ -14,7 +14,6 @@ from slidex.logging_config import logger
 from slidex.core.database import db
 from slidex.core.ollama_client import ollama_client
 from slidex.core.slide_processor import slide_processor
-from slidex.core.vector_index import vector_index
 from slidex.core.lightrag_client import lightrag_client
 from slidex.core.pdf_processor import pdf_processor
 
@@ -177,23 +176,8 @@ class IngestEngine:
             # Prepare embedding input
             embedding_input = f"{title_header or ''}\n{plain_text}\n{summary}"
             
-            # Generate embedding (only if not using LightRAG)
-            if not settings.lightrag_enabled:
-                try:
-                    embedding = ollama_client.generate_embedding(
-                        embedding_input[:2000],  # Truncate to avoid token limits
-                        session_id=session_id
-                    )
-                except Exception as e:
-                    logger.error(f"Error generating embedding for slide {slide_idx}: {e}")
-                    # Skip this slide if embedding fails
-                    continue
-                
-                # Add to FAISS index
-                vector_id = vector_index.add_vector(embedding)
-            else:
-                # Placeholder vector_id when using LightRAG
-                vector_id = slide_idx
+            # Placeholder vector_id (not used with LightRAG)
+            vector_id = slide_idx
             
             # Store paths relative to project root, or absolute if outside
             try:
@@ -227,10 +211,6 @@ class IngestEngine:
                     "vector_id": vector_id,
                 }
             )
-            
-            # Insert FAISS mapping (only if not using LightRAG)
-            if not settings.lightrag_enabled:
-                db.insert_faiss_mapping(slide_id, vector_id)
             
             # Collect data for LightRAG batch insert
             if settings.lightrag_enabled:
@@ -282,10 +262,6 @@ class IngestEngine:
                 complexity_score=data["complexity_score"],
             )
 
-            # Insert FAISS mapping (only if not using LightRAG)
-            if not settings.lightrag_enabled:
-                db.insert_faiss_mapping(data["slide_id"], data["vector_id"])
-
         # Insert all slides into LightRAG in batch
         if settings.lightrag_enabled and lightrag_documents:
             try:
@@ -295,10 +271,6 @@ class IngestEngine:
             except Exception as e:
                 logger.error(f"Error inserting documents into LightRAG: {e}")
                 # Continue anyway as metadata is in PostgreSQL
-        
-        # Save FAISS index (only if not using LightRAG)
-        if not settings.lightrag_enabled:
-            vector_index.save()
         
         logger.info(f"Ingestion complete: {file_path} (deck_id: {deck_id})")
         return deck_id

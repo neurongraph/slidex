@@ -44,10 +44,6 @@ class Settings(BaseSettings):
         default=Path("storage"),
         description="Base storage directory"
     )
-    faiss_index_path: Path = Field(
-        default=Path("storage/faiss_index.bin"),
-        description="FAISS index file path"
-    )
     audit_db_path: Path = Field(
         default=Path("storage/audit.db"),
         description="SQLite audit log database path"
@@ -105,7 +101,7 @@ class Settings(BaseSettings):
     
     # Processing configuration
     batch_size: int = Field(default=10, description="Batch size for processing")
-    thumbnail_width: int = Field(default=320, description="Thumbnail width in pixels")
+    thumbnail_width: int = Field(default=426, description="Thumbnail width in pixels")
     top_k_results: int = Field(default=10, description="Default number of search results")
     
     # Logging
@@ -149,7 +145,6 @@ class Settings(BaseSettings):
         if self.pdf_conversion_enabled:
             self.slides_pdf_dir.mkdir(parents=True, exist_ok=True)
         self.exports_dir.mkdir(parents=True, exist_ok=True)
-        self.faiss_index_path.parent.mkdir(parents=True, exist_ok=True)
         self.audit_db_path.parent.mkdir(parents=True, exist_ok=True)
         if self.lightrag_enabled:
             self.lightrag_working_dir.mkdir(parents=True, exist_ok=True)

@@ -82,7 +82,10 @@ async def api_ingest_file(request: Request):
         
         logger.info(f"API: Ingesting file {file_path}")
         
-        deck_id = ingest_engine.ingest_file(file_path, uploader=uploader)
+        # Run the sync ingest_file in a thread to avoid blocking the event loop
+        deck_id = await asyncio.to_thread(
+            ingest_engine.ingest_file, file_path, uploader=uploader
+        )
         
         if deck_id:
             return {
@@ -121,7 +124,9 @@ async def api_ingest_folder(request: Request):
         
         logger.info(f"API: Ingesting folder {folder_path} (recursive={recursive})")
         
-        deck_ids = ingest_engine.ingest_folder(
+        # Run the sync ingest_folder in a thread to avoid blocking the event loop
+        deck_ids = await asyncio.to_thread(
+            ingest_engine.ingest_folder,
             folder_path,
             recursive=recursive,
             uploader=uploader
@@ -241,9 +246,9 @@ async def api_ingest_upload(
 async def api_search(request: Request):
     """Search for slides.
 
-    Body: { 
-        "query": "search text", 
-        "top_k": 10,
+    Body: {
+        "query": "search text",
+        "top_k": 10 (optional, defaults to settings.top_k_results),
         "mode": "hybrid"  # naive, local, global, or hybrid (LightRAG modes)
     }
 
@@ -257,6 +262,7 @@ async def api_search(request: Request):
             raise HTTPException(status_code=400, detail="Missing required field: query")
         
         query = data['query']
+        # Use top_k from request if provided, otherwise use default from settings
         top_k = data.get('top_k', settings.top_k_results)
         mode = data.get('mode', 'hybrid')
         

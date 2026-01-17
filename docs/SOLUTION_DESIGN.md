@@ -29,7 +29,7 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
                                  │
                     ┌────────────┴────────────┐
                     │   Data Storage          │
-                    │   (PostgreSQL, FAISS,   │
+                    │   (PostgreSQL,          │
                     │    LightRAG)           │
                     └─────────────────────────┘
 ```
@@ -59,8 +59,7 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 
 #### 4. Data Storage Layer
 - **Metadata Storage**: PostgreSQL database
-- **Vector Index**: FAISS for semantic search (legacy, when LightRAG disabled)
-- **LightRAG Storage**: Graph-based knowledge store
+- **LightRAG Storage**: Graph-based knowledge store for semantic search
 - **Local Storage**: Thumbnails, exports, logs
 
 ## Key Features Implementation
@@ -100,11 +99,6 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 - **Local Mode**: Retrieves contextually related information from nearby graph nodes
 - **Global Mode**: Utilizes global knowledge across entire knowledge graph
 - **Hybrid Mode**: Combines local and global strategies (recommended)
-
-**FAISS-Based Search (Legacy):**
-- Used when LightRAG is disabled
-- Vector similarity search using FAISS IndexFlatL2
-- Converts FAISS distances to similarity scores
 
 **vLLM Reranker Integration:**
 - Optional reranking using vLLM service
@@ -184,8 +178,7 @@ Slide Extraction (python-pptx)
     ↓
 Embedding Generation (Ollama)
     ↓
-├─→ LightRAG Indexing (Knowledge Graph)
-└─→ FAISS Indexing (Legacy Vector Store)
+└─→ LightRAG Indexing (Knowledge Graph)
     ↓
 Metadata Storage (PostgreSQL)
 ```
@@ -232,9 +225,8 @@ Download/Storage
 ### Backend
 - **Language**: Python 3.12+
 - **Framework**: FastAPI (Web UI), Typer (CLI)
-- **Database**: PostgreSQL (metadata), FAISS (vector search), SQLite (audit)
-- **Vector Search**: FAISS (faiss-cpu)
-- **Graph RAG**: LightRAG (lightrag-hku)
+- **Database**: PostgreSQL (metadata), SQLite (audit)
+- **Graph RAG**: LightRAG (lightrag-hku) for semantic search
 - **LLM Integration**: Ollama (local models)
 - **File Processing**: python-pptx, Pillow, PyMuPDF, LibreOffice
 
@@ -282,7 +274,6 @@ class Settings(BaseSettings):
     
     # Storage
     STORAGE_ROOT: str = "storage"
-    FAISS_INDEX_PATH: str = "storage/faiss_index.bin"
     
     # Search
     TOP_K_RESULTS: int = 10
@@ -340,15 +331,6 @@ CREATE TABLE slides (
 );
 ```
 
-### FAISS Index Table
-```sql
-CREATE TABLE faiss_index (
-    id SERIAL PRIMARY KEY,
-    slide_id UUID NOT NULL REFERENCES slides(slide_id) ON DELETE CASCADE,
-    vector_id INTEGER NOT NULL UNIQUE,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-```
 
 ## Global Singleton Instances
 
@@ -393,8 +375,7 @@ storage/
 ├── exports/             # Assembled presentations
 ├── logs/                # Application logs
 ├── lightrag/            # LightRAG knowledge graph
-├── audit.db             # LLM audit database
-└── faiss_index.bin      # FAISS vector index (legacy)
+└── audit.db             # LLM audit database
 ```
 
 ## Security Considerations
@@ -413,7 +394,7 @@ storage/
 ## Performance Considerations
 
 ### Indexing
-- FAISS for fast vector search (exact search with IndexFlatL2)
+- LightRAG for graph-based semantic search
 - PostgreSQL indexing for metadata queries
 - LightRAG graph for semantic relationships
 
@@ -587,9 +568,8 @@ slidex assemble --slide-ids "id1,id2" --output "result.pptx"
 - View stats: `just db-stats`
 - Shows deck count, slide count, index size
 
-### Index Statistics
-- FAISS index: `just index-stats`
-- Shows vector count, index size
+### LightRAG Statistics
+- View graph statistics and knowledge base info
 
 ## Best Practices
 
