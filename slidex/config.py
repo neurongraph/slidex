@@ -73,7 +73,7 @@ class Settings(BaseSettings):
         description="Enable vLLM-based reranker for LightRAG"
     )
     vllm_reranker_url: str = Field(
-        default="ttp://localhost:8182/v1/rerank",
+        default="http://localhost:8182/v1/rerank",
         description="vLLM reranker service URL"
     )
     vllm_reranker_model: str = Field(
@@ -111,10 +111,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = Field(default="DEBUG", description="Logging level")
     
-    # Flask
-    flask_host: str = Field(default="0.0.0.0", description="Flask host")
-    flask_port: int = Field(default=5001, description="FastAPI/Uvicorn port")
-    flask_debug: bool = Field(default=True, description="Flask debug mode")
+    # Server (FastAPI/Uvicorn)
+    server_host: str = Field(default="0.0.0.0", description="Server host address")
+    server_port: int = Field(default=5001, description="Server port")
+    server_debug: bool = Field(default=True, description="Debug mode")
     
     @property
     def ollama_base_url(self) -> str:

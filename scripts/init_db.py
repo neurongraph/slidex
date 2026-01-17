@@ -58,32 +58,52 @@ def create_database_if_not_exists():
 
 
 def run_migrations():
-    """Run all migration files in order."""
+    """
+    Run database initialization.
+    Prefers consolidated init_schema.sql if available, otherwise runs individual migrations.
+    """
     migrations_dir = Path(__file__).parent.parent / "migrations"
-    migration_files = sorted(migrations_dir.glob("*.sql"))
-    
-    if not migration_files:
-        logger.warning("No migration files found")
-        return
+    consolidated_schema = migrations_dir / "init_schema.sql"
     
     try:
         conn = psycopg2.connect(settings.database_url)
         cur = conn.cursor()
         
-        for migration_file in migration_files:
-            logger.info(f"Running migration: {migration_file.name}")
-            
-            with open(migration_file, "r") as f:
+        # Prefer consolidated schema if it exists
+        if consolidated_schema.exists():
+            logger.info("Using consolidated schema: init_schema.sql")
+            with open(consolidated_schema, "r") as f:
                 sql_content = f.read()
             
             cur.execute(sql_content)
             conn.commit()
+            logger.info("Consolidated schema applied successfully")
+        else:
+            # Fall back to individual migration files
+            migration_files = sorted([
+                f for f in migrations_dir.glob("*.sql")
+                if f.name.startswith(("001_", "002_", "003_"))
+            ])
             
-            logger.info(f"Migration {migration_file.name} completed successfully")
+            if not migration_files:
+                logger.warning("No migration files found")
+                return
+            
+            logger.info("Using individual migration files")
+            for migration_file in migration_files:
+                logger.info(f"Running migration: {migration_file.name}")
+                
+                with open(migration_file, "r") as f:
+                    sql_content = f.read()
+                
+                cur.execute(sql_content)
+                conn.commit()
+                
+                logger.info(f"Migration {migration_file.name} completed successfully")
         
         cur.close()
         conn.close()
-        logger.info("All migrations completed successfully")
+        logger.info("Database initialization completed successfully")
         
     except Exception as e:
         logger.error(f"Error running migrations: {e}")

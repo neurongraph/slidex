@@ -91,9 +91,8 @@ slidex search "machine learning"
 
 The application uses Pydantic settings for configuration. You can set configuration values via:
 
-1. Environment variables
-2. A `config/dev.yaml` file (see `config/dev.yaml.example`)
-3. Default values in the code
+1. Environment variables (or `.env` file)
+2. Default values in the code
 
 ### Key Settings
 
@@ -118,8 +117,8 @@ To enable vLLM-based reranker for enhanced search results:
 Example configuration in `.env`:
 ```
 VLLM_RERANKER_ENABLED=true
-VLLM_RERANKER_URL=http://localhost:8182
-VLLM_RERANKER_MODEL=bge-reranker-v2-m3
+VLLM_RERANKER_URL=http://localhost:8182/v1/rerank
+VLLM_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 ```
 
 ## Usage

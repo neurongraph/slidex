@@ -391,7 +391,7 @@ if __name__ == '__main__':
     import uvicorn
     uvicorn.run(
         app,
-        host=settings.flask_host,
-        port=settings.flask_port
+        host=settings.server_host,
+        port=settings.server_port
     )
 

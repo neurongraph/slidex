@@ -109,7 +109,8 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 **vLLM Reranker Integration:**
 - Optional reranking using vLLM service
 - Enhances search result quality with better relevance scoring
-- Requires separate vLLM service running with `bge-reranker-v2-m3` model
+- Requires separate vLLM service running with `BAAI/bge-reranker-v2-m3` model
+- Default URL: `http://localhost:8182/v1/rerank`
 
 ### 3. Assembly Engine
 
@@ -270,9 +271,14 @@ class Settings(BaseSettings):
     LIGHTRAG_LLM_CONTEXT_SIZE: int = 32768
     
     # vLLM Reranker
-    VLLM_RERANKER_ENABLED: bool = False
-    VLLM_RERANKER_URL: str = "http://localhost:8182"
-    VLLM_RERANKER_MODEL: str = "bge-reranker-v2-m3"
+    VLLM_RERANKER_ENABLED: bool = True
+    VLLM_RERANKER_URL: str = "http://localhost:8182/v1/rerank"
+    VLLM_RERANKER_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    
+    # PDF Processing
+    PDF_CONVERSION_ENABLED: bool = True
+    LIBREOFFICE_PATH: str = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    PDF_DPI: int = 150
     
     # Storage
     STORAGE_ROOT: str = "storage"
@@ -280,6 +286,11 @@ class Settings(BaseSettings):
     
     # Search
     TOP_K_RESULTS: int = 10
+    
+    # Server (FastAPI/Uvicorn)
+    SERVER_HOST: str = "0.0.0.0"
+    SERVER_PORT: int = 5001
+    SERVER_DEBUG: bool = True
 ```
 
 ### Environment Variables
@@ -287,46 +298,55 @@ class Settings(BaseSettings):
 Configuration can be overridden via:
 1. `.env` file in project root
 2. Environment variables
-3. `config/dev.yaml` file
+
+**Note:** The application uses Pydantic Settings with `.env` file support. YAML configuration is not currently implemented.
 
 ## Database Schema
 
 ### Decks Table
 ```sql
 CREATE TABLE decks (
-    deck_id UUID PRIMARY KEY,
-    file_hash TEXT UNIQUE NOT NULL,
+    deck_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    file_hash TEXT NOT NULL UNIQUE,
     original_path TEXT NOT NULL,
     filename TEXT NOT NULL,
     uploader TEXT,
-    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    slide_count INTEGER,
-    notes JSONB
+    uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    slide_count INTEGER NOT NULL DEFAULT 0,
+    notes JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 ```
 
 ### Slides Table
 ```sql
 CREATE TABLE slides (
-    slide_id UUID PRIMARY KEY,
-    deck_id UUID REFERENCES decks(deck_id) ON DELETE CASCADE,
+    slide_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    deck_id UUID NOT NULL REFERENCES decks(deck_id) ON DELETE CASCADE,
     slide_index INTEGER NOT NULL,
     title_header TEXT,
     plain_text TEXT,
     summary_10_20_words TEXT,
     thumbnail_path TEXT,
     slide_file_path TEXT,
-    pdf_page_path TEXT,
-    original_slide_position INTEGER,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    slide_pdf_path TEXT,
+    requires_pdf BOOLEAN DEFAULT FALSE,
+    complexity_score INTEGER DEFAULT 0,
+    original_slide_position INTEGER NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE(deck_id, slide_index)
 );
 ```
 
 ### FAISS Index Table
 ```sql
 CREATE TABLE faiss_index (
-    slide_id UUID PRIMARY KEY REFERENCES slides(slide_id) ON DELETE CASCADE,
-    vector_id INTEGER UNIQUE NOT NULL
+    id SERIAL PRIMARY KEY,
+    slide_id UUID NOT NULL REFERENCES slides(slide_id) ON DELETE CASCADE,
+    vector_id INTEGER NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 ```
 
@@ -368,7 +388,7 @@ from slidex.core.assembler import slide_assembler
 ```
 storage/
 ├── slides/              # Individual slide files ({slide_id}.pptx)
-├── pdf_pages/           # Individual slide PDFs ({slide_id}.pdf)
+├── slides_pdf/          # Individual slide PDFs ({slide_id}.pdf)
 ├── thumbnails/          # Slide thumbnails (organized by deck_id)
 ├── exports/             # Assembled presentations
 ├── logs/                # Application logs
