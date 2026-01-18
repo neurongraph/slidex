@@ -4,6 +4,8 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 
 ## Features
 
+- **Google SSO Authentication**: Secure login via Google Workspace
+- **Mandatory Login Enforcement**: Protected access for all web and API routes
 - **LightRAG Integration**: Graph-based RAG with entity extraction and relationship discovery
 - **Ingest PowerPoint files**: Single files or entire folders (recursive)
 - **Advanced semantic search**: Find slides using natural language with context awareness
@@ -11,7 +13,7 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 - **Slide assembly**: Create new presentations from search results
 - **Local models**: Uses Ollama for embeddings and summarization (no cloud APIs), and vLLM-based reranking model
 - **Audit logging**: All LLM interactions logged to SQLite for full auditability
-- **Web UI**: Simple FastAPI-based interface for search and browsing
+- **Web UI**: Modern FastAPI-based interface for search and browsing
 - **CLI**: Command-line interface for batch operations
 
 ## Prerequisites
@@ -71,7 +73,7 @@ just pull-models
 **Web Interface:**
 ```bash
 just run
-# Open browser to http://localhost:5000
+# Open browser to http://localhost:5001 (authentication required)
 ```
 
 **Command Line:**
@@ -105,6 +107,10 @@ The application uses Pydantic settings for configuration. You can set configurat
 - `LIGHTRAG_ENABLED`: Enable LightRAG (default: `True`)
 - `LIGHTRAG_LLM_CONTEXT_SIZE`: Context size for LightRAG LLM (default: `32768`)
 - `TOP_K_RESULTS`: Default number of search results (default: 10)
+- `GOOGLE_CLIENT_ID`: Google OAuth 2.0 Client ID
+- `GOOGLE_CLIENT_SECRET`: Google OAuth 2.0 Client Secret
+- `SECRET_KEY`: Secret key for session encryption
+- `SESSION_SECRET_KEY`: Secret key for signing session cookies
 
 ### vLLM Reranker Configuration (Optional)
 
@@ -131,7 +137,7 @@ Start the FastAPI development server:
 just run
 ```
 
-Then open your browser to http://localhost:5000
+Then open your browser to http://localhost:5001. You will be redirected to the Google login page.
 
 **Pages:**
 - `/` - Search interface
@@ -166,23 +172,25 @@ slidex assemble --slide-ids "uuid1,uuid2" --output "new_deck.pptx"
 
 The FastAPI app exposes a REST API for programmatic access:
 
+**Note**: API requests require a valid `session_id` cookie. Use tools like `curl --cookie "session_id=..."`.
+
 **Ingest File:**
 ```bash
-curl -X POST http://localhost:5000/api/ingest/file \
+curl -X POST http://localhost:5001/api/ingest/file \
   -H "Content-Type: application/json" \
   -d '{"path": "/path/to/file.pptx"}'
 ```
 
 **Search:**
 ```bash
-curl -X POST http://localhost:5000/api/search \
+curl -X POST http://localhost:5001/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "data science", "top_k": 10, "mode": "hybrid"}'
 ```
 
 **Assemble:**
 ```bash
-curl -X POST http://localhost:5000/api/assemble \
+curl -X POST http://localhost:5001/api/assemble \
   -H "Content-Type: application/json" \
   -d '{"slide_ids": ["uuid1", "uuid2"], "preserve_order": true}'
 ```
@@ -352,9 +360,8 @@ All slides will be indexed into LightRAG's knowledge graph automatically during 
 
 ## Limitations
 
-- **Dev mode only**: No authentication, single-user, no containerization
+- **Dev mode focus**: Designed for local development, not optimized for large-scale production
 - **Slide copying**: Best-effort formatting preservation (complex slides may lose some formatting)
-- **Local only**: Designed for local development, not production deployment
 
 ## License
 

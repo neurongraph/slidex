@@ -126,10 +126,37 @@
                     <li><a href="/ingest">Ingest</a></li>
                     <li><a href="/decks">Decks</a></li>
                     <li><a href="/graph">Graph</a></li>
+                    {% if user %}
+                        <li style="display: flex; align-items: center; gap: 10px;">
+                            {% if user.picture %}
+                                <img src="{{ user.picture }}" alt="{{ user.name }}" style="width: 32px; height: 32px; border-radius: 50%;">
+                            {% endif %}
+                            <span style="font-size: 0.9em;">{{ user.name }}</span>
+                            <a href="#" onclick="logout()" style="border: 1px solid rgba(255,255,255,0.3); padding: 5px 10px; border-radius: 4px;">Logout</a>
+                        </li>
+                    {% else %}
+                        <li><a href="/auth/login" class="button" style="padding: 0.5rem 1rem; font-size: 0.9em;">Login</a></li>
+                    {% endif %}
                 </ul>
             </nav>
         </div>
     </header>
+    
+    <script>
+        async function logout() {
+            try {
+                const response = await fetch('/auth/logout', { method: 'POST' });
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Logout failed');
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                alert('Logout failed');
+            }
+        }
+    </script>
     
     <main class="container">
         {% block content %}{% endblock %}

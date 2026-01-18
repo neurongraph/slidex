@@ -3,8 +3,8 @@ FastAPI web application and API for Slidex.
 Migrated from Flask to support async operations with LightRAG.
 """
 
-from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form, Depends
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
@@ -16,6 +16,8 @@ import shutil
 import asyncio
 import uuid
 
+from starlette.middleware.sessions import SessionMiddleware
+
 from slidex.config import settings
 from slidex.logging_config import logger
 from slidex.core.ingest import ingest_engine
@@ -23,9 +25,17 @@ from slidex.core.search import search_engine
 from slidex.core.assembler import slide_assembler
 from slidex.core.database import db
 from slidex.core.graph_visualizer import graph_visualizer
+from slidex.core.deps import get_current_user_optional
+from slidex.api.routers.auth import router as auth_router
 
 # Initialize FastAPI app
 app = FastAPI(title="Slidex", description="PowerPoint slide management with semantic search")
+
+# Add SessionMiddleware for Authlib state management
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret_key)
+
+# Include Auth Router
+app.include_router(auth_router)
 
 # Setup templates
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -35,32 +45,70 @@ static_path = Path(__file__).parent.parent / "static"
 if static_path.exists():
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
+# ============= Middleware =============
+
+@app.middleware("http")
+async def enforce_authentication(request: Request, call_next):
+    """
+    Middleware to enforce authentication on all routes except:
+    - /auth/* (login, callback, logout)
+    - /static/* (css, js, images)
+    - /health (health check)
+    - /favicon.ico
+    """
+    path = request.url.path
+    
+    # Define exempt paths
+    exempt_prefixes = ["/auth", "/static", "/health"]
+    exempt_paths = ["/favicon.ico"]
+    
+    # Check if path is exempt
+    is_exempt = any(path.startswith(prefix) for prefix in exempt_prefixes) or path in exempt_paths
+    
+    if is_exempt:
+        return await call_next(request)
+    
+    # Check for authenticated user
+    user = await get_current_user_optional(request)
+    if not user:
+        # If not authenticated, redirect or return 401
+        if path.startswith("/api"):
+            return JSONResponse(
+                status_code=401,
+                content={"error": "Not authenticated", "detail": "Authentication required"}
+            )
+        else:
+            return RedirectResponse(url="/auth/login")
+            
+    # Proceed to the actual route
+    return await call_next(request)
+
 
 # ============= Web UI Routes =============
 
 @app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+async def index(request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     """Home page with search interface."""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
 @app.get("/ingest", response_class=HTMLResponse)
-async def ingest_page(request: Request):
+async def ingest_page(request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     """Ingest page."""
-    return templates.TemplateResponse("ingest.html", {"request": request})
+    return templates.TemplateResponse("ingest.html", {"request": request, "user": user})
 
 
 @app.get("/decks", response_class=HTMLResponse)
-async def decks_page(request: Request):
+async def decks_page(request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     """View all decks."""
     decks = db.get_all_decks()
-    return templates.TemplateResponse("decks.html", {"request": request, "decks": decks})
+    return templates.TemplateResponse("decks.html", {"request": request, "decks": decks, "user": user})
 
 
 @app.get("/graph", response_class=HTMLResponse)
-async def graph_page(request: Request):
+async def graph_page(request: Request, user: Optional[dict] = Depends(get_current_user_optional)):
     """Knowledge graph visualization page."""
-    return templates.TemplateResponse("graph.html", {"request": request})
+    return templates.TemplateResponse("graph.html", {"request": request, "user": user})
 
 
 # ============= API Routes =============

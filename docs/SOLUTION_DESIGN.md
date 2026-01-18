@@ -11,15 +11,22 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   User Interface│    │   CLI Interface │    │   REST API      │
-│   (Web UI)      │    │   (Command Line)│    │   (FastAPI)     │
+│   (Web UI)      │    │   (Command Line)│    │   (Protected)   │
 └─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
           │                      │                      │
-          └──────────────────────┼──────────────────────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    │   Core Application      │
-                    │   (slidex/core/)        │
-                    └────────────┬────────────┘
+          └──────────┬───────────┴──────────┬───────────┘
+                     │                      │
+            ┌────────┴─────────┐   ┌────────┴─────────┐
+            │  Auth Middleware │   │   OAuth Service  │
+            │  (FastAPI)       │   │   (Google SSO)   │
+            └────────┬─────────┘   └────────┬─────────┘
+                     │                      │
+                     └──────────┬───────────┘
+                                │
+                   ┌────────────┴────────────┐
+                   │   Core Application      │
+                   │   (slidex/core/)        │
+                   └─────────────────────────┘
                                  │
                     ┌────────────┴────────────┐
                     │   Data Processing       │
@@ -37,9 +44,10 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 ### Component Breakdown
 
 #### 1. User Interface Layer
-- **Web UI**: FastAPI-based interface with Jinja2 templates
+- **Web UI**: FastAPI-based interface with Jinja2 templates (Protected)
 - **CLI**: Typer-based command-line interface
-- **REST API**: Programmatic access to core functionality
+- **REST API**: Programmatic access (Requires authentication cookie)
+- **Authentication**: Google SSO integration via Authlib
 
 #### 2. Core Application Layer
 - **Configuration Management**: `slidex/config.py` using Pydantic Settings
@@ -55,14 +63,29 @@ Slidex is a single-user Python application for managing PowerPoint slides with s
 - **Search Engine**: `slidex/core/search.py`
 - **Assembly Engine**: `slidex/core/assembler.py`
 - **PDF Assembly**: `slidex/core/pdf_assembler.py`
+- **Authentication Service**: `slidex/core/auth_service.py`
 - **Audit Logging**: `slidex/core/audit_logger.py`
 
 #### 4. Data Storage Layer
 - **Metadata Storage**: PostgreSQL database
+- **Session Storage**: PostgreSQL `sessions` table
 - **LightRAG Storage**: Graph-based knowledge store for semantic search
 - **Local Storage**: Thumbnails, exports, logs
 
 ## Key Features Implementation
+
+### 0. User Authentication & Session Management
+
+Slidex implements a mandatory authentication layer using Google SSO:
+
+- **SSO Provider**: Google Workspace via Authlib.
+- **Session Persistence**: Sessions are stored in the PostgreSQL `sessions` table.
+- **Authentication Enforcement**: A global FastAPI middleware (`enforce_authentication`) intercepts all requests.
+- **Redirection Logic**:
+  - Web routes redirect unauthenticated users to `/auth/login`.
+  - API routes (`/api/*`) return `401 Unauthorized` for unauthenticated requests.
+- **Exemptions**: `/auth/*`, `/static/*`, `/health`, and `/favicon.ico` are exempt from auth checks.
+
 
 ### 1. Ingestion Pipeline
 
@@ -479,7 +502,7 @@ just clean-data     # Clean all data and restart fresh
 ### Planned Improvements
 1. Enhanced search capabilities with more sophisticated RAG
 2. Improved UI/UX with modern web frameworks
-3. Multi-user support and authentication
+3. Enhanced multi-user features (RBAC, permissions)
 4. Containerization for easier deployment
 5. Advanced formatting preservation in assembly
 6. Cloud integration options

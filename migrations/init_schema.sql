@@ -81,12 +81,55 @@ CREATE TRIGGER update_slides_updated_at BEFORE UPDATE ON slides
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
+-- USERS AND SESSIONS
+-- ============================================================================
+
+-- Users table: stores user identity from Google SSO
+CREATE TABLE IF NOT EXISTS users (
+    user_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    picture TEXT,
+    google_id TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Sessions table: stores server-side session data
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    data JSONB DEFAULT '{}'::jsonb,
+    expires_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================================
+-- USER/SESSION INDEXES
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+
+-- ============================================================================
+-- USER TRIGGERS
+-- ============================================================================
+
+DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================================================
 -- COMMENTS
 -- ============================================================================
 
 -- Table comments
-COMMENT ON TABLE decks IS 'Stores metadata about ingested PowerPoint presentations';
+COMMENT ON TABLE decks IS 'Stores metadata about ingested PowerPoint files';
 COMMENT ON TABLE slides IS 'Stores metadata for individual slides extracted from presentations';
+COMMENT ON TABLE users IS 'Stores authenticated user information from Google SSO';
+COMMENT ON TABLE sessions IS 'Stores active user sessions with server-side validation';
 
 -- Column comments
 COMMENT ON COLUMN slides.slide_file_path IS 'Path to individual slide .pptx file for standalone access';

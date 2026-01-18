@@ -26,6 +26,18 @@ class Settings(BaseSettings):
         default="postgresql://localhost:5432/slidex",
         description="PostgreSQL connection URL"
     )
+
+    # Authentication
+    google_client_id: Optional[str] = Field(default=None, description="Google OAuth Client ID")
+    google_client_secret: Optional[str] = Field(default=None, description="Google OAuth Client Secret")
+    session_secret_key: str = Field(
+        default="change-me-in-production-please",
+        description="Secret key for signing session cookies"
+    )
+    session_expire_seconds: int = Field(
+        default=86400, # 24 hours
+        description="Session expiration time in seconds"
+    )
     
     # Ollama configuration
     ollama_host: str = Field(default="http://localhost", description="Ollama host URL")
