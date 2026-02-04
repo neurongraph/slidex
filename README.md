@@ -127,6 +127,34 @@ VLLM_RERANKER_URL=http://localhost:8182/v1/rerank
 VLLM_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 ```
 
+### Creating Google OAuth Client ID & Secret
+
+If you plan to use Google SSO you must create OAuth credentials in the Google Cloud Console and provide the Client ID and Client Secret to Slidex.
+
+1. Go to https://console.cloud.google.com/apis/credentials and select your project (or create a new one).
+2. Configure the OAuth consent screen (External or Internal depending on your account). Fill required fields and save.
+3. Create credentials → OAuth 2.0 Client IDs → Application type: "Web application".
+4. Add an Authorized redirect URI:
+
+```text
+http://localhost:5001/auth/callback
+```
+
+5. Create the client and copy the `Client ID` and `Client secret`.
+6. Add them to your `.env` at the repo root (or export as environment variables):
+
+```bash
+export GOOGLE_CLIENT_ID=your-client-id
+export GOOGLE_CLIENT_SECRET=your-client-secret
+# or add to .env
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+```
+
+7. Restart Slidex (`just run`) so the new settings are picked up. You should see the OAuth client register without the previous warning.
+
+Note: ensure the redirect URI above matches exactly what the app uses (`/auth/callback`) and that your app is reachable at that host/port when testing.
+
 ## Usage
 
 ### Web Interface
@@ -318,6 +346,30 @@ slidex ingest file /path/to/presentation.pptx
 - Ensure PostgreSQL is running: `brew services list | grep postgresql`
 - Check `DATABASE_URL` in config
 - Initialize database: `just init-db`
+
+#### Database: "relation \"...\" does not exist" errors
+
+- Symptom: after attempting Google SSO or other DB operations you may see errors like `relation "users" does not exist` indicating required tables are missing.
+- Cause: the database exists but the schema (tables) hasn't been applied.
+- Fix: ensure `DATABASE_URL` in your `.env` points to the intended database, then run:
+
+```bash
+just init-db
+```
+
+This command will create the database (if missing) and apply `migrations/init_schema.sql`, which creates the `users`, `sessions`, `decks`, and `slides` tables.
+
+Verify tables with `psql`:
+
+```bash
+# list public tables
+psql "$DATABASE_URL" -c "\dt"
+
+# or check specific tables
+psql "$DATABASE_URL" -c "SELECT to_regclass('public.users'), to_regclass('public.sessions');"
+```
+
+If `just init-db` fails due to connection or permission issues, check the `DATABASE_URL`, ensure Postgres is running and reachable, and that the configured user has rights to create/apply the schema. You can also run `python scripts/init_db.py` directly for additional logging.
 
 ### PDF Processing Issues
 
